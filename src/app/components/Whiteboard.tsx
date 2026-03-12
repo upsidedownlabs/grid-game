@@ -338,6 +338,7 @@ const Whiteboard = forwardRef<HTMLDivElement, WhiteboardProps>(({
     <div
       ref={containerRef}
       className="flex flex-col flex-[1_1_0%] min-h-80 relative w-full h-full overflow-hidden"
+      data-whiteboard-container="true" 
     >
       <div
         ref={gridContainerRef}

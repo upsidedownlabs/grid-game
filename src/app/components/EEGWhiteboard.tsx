@@ -9,6 +9,8 @@ import JawTimer from './JawTimer';
 import GameTutorial from './GameTutorial';
 import { BoardState, MenuItem, DrawingMode, PenState, MenuLevel } from '../types';
 import Link from "next/link";
+import html2canvas from 'html2canvas';
+import domtoimage from 'dom-to-image';
 
 // Types for shape drawing
 type ShapeType = 'line' | 'rectangle' | 'triangle' | 'pixel' | null;
@@ -68,6 +70,8 @@ const MENU_LEVELS: MenuLevel[] = [
       { id: 'new-board', name: 'New Board', icon: '🆕', action: 'new' },
       { id: 'clear-board', name: 'Clear Board', icon: '🧹', action: 'clear' },
       { id: 'exit', name: 'Exit Menu', icon: '❌', action: 'exit' },
+      { id: 'practice-game', name: 'Start Practice Game', icon: '🎮', action: 'practice-game' },
+
     ]
   },
   {
@@ -984,6 +988,199 @@ const EEGWhiteboard = () => {
     saveState();
   }, [saveState]);
 
+  // Add this helper function inside your EEGWhiteboard component
+  const saveDrawingWithScreenshot = async () => {
+    const currentGrid = gridRef.current;
+    const currentGridDimensions = gridDimensionsRef.current;
+
+    console.log('Saving grid:', currentGrid);
+    console.log('Grid dimensions:', currentGridDimensions);
+
+    if (currentGrid && currentGrid.length > 0) {
+      console.log('First row length:', currentGrid[0]?.length);
+    }
+
+    // Create a clean copy of the grid data
+    const gridCopy = currentGrid.map(row => [...row]);
+
+    const drawingData = {
+      grid: gridCopy,
+      cursor: { x: cursorXRef.current, y: cursorYRef.current },
+      mode: currentModeRef.current,
+      penState: penStateRef.current,
+      timestamp: new Date().toISOString(),
+      dimensions: currentGridDimensions,
+      shapeDrawingMode: shapeDrawingModeRef.current,
+      selectedShape: selectedShapeRef.current
+    };
+
+    try {
+      // First, save the JSON file
+      const jsonString = JSON.stringify(drawingData, null, 2);
+      const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+      const jsonUrl = URL.createObjectURL(jsonBlob);
+
+      // Get the filename base with timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filenameBase = `neuroart-${timestamp}`;
+
+      // Create JSON download link
+      const jsonLink = document.createElement('a');
+      jsonLink.href = jsonUrl;
+      jsonLink.download = `${filenameBase}.json`;
+
+      logCommand('📸 Capturing screenshot with dom-to-image...');
+
+      // Find the whiteboard container div
+      const whiteboardContainer = document.querySelector('[data-whiteboard-container="true"]');
+
+      if (whiteboardContainer) {
+        try {
+          // Use dom-to-image to capture the whiteboard
+          // Options for better quality
+          const options = {
+            bgcolor: '#111827', // Match your bg-gray-900 color
+            style: {
+              'background-color': '#111827',
+              'transform': 'scale(1)',
+              'transform-origin': 'top left'
+            },
+            filter: (node: Node) => {
+              // Exclude any elements that might cause issues
+              if (node instanceof HTMLElement) {
+                // Don't exclude any elements - capture everything
+                return true;
+              }
+              return true;
+            }
+          };
+
+          // Get the PNG data URL
+          const dataUrl = await domtoimage.toPng(whiteboardContainer as HTMLElement, options);
+
+          // Convert data URL to blob
+          const response = await fetch(dataUrl);
+          const blob = await response.blob();
+
+          // Create screenshot download link
+          const screenshotUrl = URL.createObjectURL(blob);
+          const screenshotLink = document.createElement('a');
+          screenshotLink.href = screenshotUrl;
+          screenshotLink.download = `${filenameBase}.png`;
+
+          // Trigger JSON download first
+          document.body.appendChild(jsonLink);
+          jsonLink.click();
+          document.body.removeChild(jsonLink);
+
+          // Small delay to ensure JSON download starts
+          await new Promise(resolve => setTimeout(resolve, 200));
+
+          // Then trigger screenshot download
+          document.body.appendChild(screenshotLink);
+          screenshotLink.click();
+          document.body.removeChild(screenshotLink);
+
+          // Clean up URLs
+          URL.revokeObjectURL(jsonUrl);
+          URL.revokeObjectURL(screenshotUrl);
+
+          console.log('Save successful! JSON size:', jsonBlob.size, 'bytes, Screenshot captured');
+          setMenuActive(false);
+          logCommand('💾 Drawing saved with screenshot');
+
+        } catch (domToImageError) {
+          console.error('dom-to-image failed:', domToImageError);
+          logCommand(`⚠️ Screenshot failed: ${domToImageError instanceof Error ? domToImageError.message : 'Unknown error'}`);
+
+          // Fallback: Try with different options
+          try {
+            logCommand('🔄 Retrying screenshot with simplified options...');
+
+            // Simplified options as fallback
+            const fallbackOptions = {
+              bgcolor: '#111827',
+              quality: 1
+            };
+
+            const dataUrl = await domtoimage.toPng(whiteboardContainer as HTMLElement, fallbackOptions);
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            const screenshotUrl = URL.createObjectURL(blob);
+            const screenshotLink = document.createElement('a');
+            screenshotLink.href = screenshotUrl;
+            screenshotLink.download = `${filenameBase}.png`;
+
+            // Trigger JSON download
+            document.body.appendChild(jsonLink);
+            jsonLink.click();
+            document.body.removeChild(jsonLink);
+
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            document.body.appendChild(screenshotLink);
+            screenshotLink.click();
+            document.body.removeChild(screenshotLink);
+
+            URL.revokeObjectURL(jsonUrl);
+            URL.revokeObjectURL(screenshotUrl);
+
+            setMenuActive(false);
+            logCommand('💾 Drawing saved with screenshot (fallback method)');
+
+          } catch (fallbackError) {
+            console.error('Fallback screenshot also failed:', fallbackError);
+            // Just save JSON
+            document.body.appendChild(jsonLink);
+            jsonLink.click();
+            document.body.removeChild(jsonLink);
+            URL.revokeObjectURL(jsonUrl);
+
+            setMenuActive(false);
+            logCommand('💾 Drawing saved (JSON only - screenshot failed)');
+          }
+        }
+      } else {
+        // Whiteboard container not found - just save JSON
+        document.body.appendChild(jsonLink);
+        jsonLink.click();
+        document.body.removeChild(jsonLink);
+        URL.revokeObjectURL(jsonUrl);
+
+        setMenuActive(false);
+        logCommand('💾 Drawing saved (screenshot not available)');
+      }
+    } catch (error) {
+      console.error('Save failed:', error);
+      logCommand(`❌ Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      // Try to at least save the JSON if everything fails
+      try {
+        const jsonString = JSON.stringify(drawingData, null, 2);
+        const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+        const jsonUrl = URL.createObjectURL(jsonBlob);
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filenameBase = `neuroart-${timestamp}`;
+
+        const jsonLink = document.createElement('a');
+        jsonLink.href = jsonUrl;
+        jsonLink.download = `${filenameBase}.json`;
+
+        document.body.appendChild(jsonLink);
+        jsonLink.click();
+        document.body.removeChild(jsonLink);
+        URL.revokeObjectURL(jsonUrl);
+
+        setMenuActive(false);
+        logCommand('💾 Drawing saved (JSON only - emergency fallback)');
+      } catch (jsonError) {
+        console.error('Even JSON save failed:', jsonError);
+        logCommand('❌ Complete save failure');
+      }
+    }
+  };
+
+
   // In executeMenuAction function, add the new case
   const executeMenuAction = useCallback((action: string) => {
     //console.log('Executing menu action:', action);
@@ -1055,6 +1252,11 @@ const EEGWhiteboard = () => {
         }
         break;
 
+      case 'practice-game':
+        setShowGameTutorial(true); // Game tutorial dikhao
+        setMenuActive(false); // Menu band karo
+        logCommand('🎮 Starting Practice Game');
+        break;
       // Shape tools
       case 'shape-line':
         setSelectedShape('line');
@@ -1104,54 +1306,11 @@ const EEGWhiteboard = () => {
         break;
 
       // File operations
+      // In executeMenuAction function, update the save case:
+
       case 'save':
-        // Use refs to get current values
-        const currentGrid = gridRef.current;
-        const currentGridDimensions = gridDimensionsRef.current;
-
-        console.log('Saving grid:', currentGrid);
-        console.log('Grid dimensions:', currentGridDimensions);
-        console.log('Grid length:', currentGrid?.length || 0);
-        if (currentGrid && currentGrid.length > 0) {
-          console.log('First row length:', currentGrid[0]?.length);
-          console.log('Sample data:', currentGrid[0]?.slice(0, 5));
-        }
-
-        // Create a clean copy of the grid data
-        const gridCopy = currentGrid.map(row => [...row]);
-
-        const drawingData = {
-          grid: gridCopy,
-          cursor: { x: cursorXRef.current, y: cursorYRef.current },
-          mode: currentModeRef.current,
-          penState: penStateRef.current,
-          timestamp: new Date().toISOString(),
-          dimensions: currentGridDimensions // Add dimensions for reference
-        };
-
-        try {
-          // Convert to JSON string
-          const jsonString = JSON.stringify(drawingData, null, 2);
-
-          // Create blob and download
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `neuroart-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-
-          console.log('Save successful! File size:', blob.size, 'bytes');
-          setMenuActive(false);
-          logCommand('💾 Drawing saved');
-        } catch (error) {
-          console.error('Save failed:', error);
-        }
+        saveDrawingWithScreenshot();
         break;
-
       case 'exit':
         setMenuActive(false);
         logCommand('❌ Menu closed');

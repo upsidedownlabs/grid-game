@@ -25,8 +25,8 @@ interface GameTutorialProps {
   bleEmitter?: any;
 }
 
-// Menu structure - updated to be a function that accepts shapeDrawingMode
-const getMenuLevels = (shapeDrawingMode: boolean): MenuLevel[] => [
+// Menu structure - updated to be a function that accepts shapeDrawingMode and isComplete
+const getMenuLevels = (shapeDrawingMode: boolean, isComplete: boolean): MenuLevel[] => [
   {
     id: 0,
     name: 'Drawing Controls',
@@ -47,11 +47,17 @@ const getMenuLevels = (shapeDrawingMode: boolean): MenuLevel[] => [
   },
   {
     id: 1,
-    name: 'File Operations',
+    name: 'File & Navigation',
     items: [
-      { id: 'save', name: 'Save Drawing', icon: '💾', action: 'save' },
-      { id: 'new-board', name: 'New Board', icon: '🆕', action: 'new' },
-      { id: 'clear-board', name: 'Clear Board', icon: '🧹', action: 'clear' },
+      { id: 'skip-to-drawing', name: 'Skip to Drawing', icon: '⏭️', action: 'skip-to-drawing' },
+      { id: 'level-1', name: 'Level 1 - Triangle', icon: '1️⃣', action: 'level-1' },
+      { id: 'level-2', name: 'Level 2 - Rectangle', icon: '2️⃣', action: 'level-2' },
+      { id: 'level-3', name: 'Level 3 - Combo', icon: '3️⃣', action: 'level-3' },
+      { id: 'reset-level', name: 'Reset Level', icon: '🔄', action: 'reset-level' },
+      // Show Next Level button only when level is complete and not last level
+      ...(isComplete ? [
+        { id: 'next-level', name: 'Next Level', icon: '⏩', action: 'next-level' }
+      ] : []),
       { id: 'exit', name: 'Exit Menu', icon: '❌', action: 'exit' },
     ]
   },
@@ -92,7 +98,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
   const [timeLeft, setTimeLeft] = useState(300);
   const [lastBleAction, setLastBleAction] = useState('');
 
-  
+
   // Menu state
   const [menuActive, setMenuActive] = useState(false);
   const [menuLevel, setMenuLevel] = useState(0);
@@ -473,13 +479,13 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
     };
   }, [updateLayout]);
 
-// Set cursor to center when grid dimensions are first established
-useEffect(() => {
-  if (gridDimensions.columns > 0 && gridDimensions.rows > 0) {
-    setCursorX(Math.floor(gridDimensions.columns / 2));
-    setCursorY(Math.floor(gridDimensions.rows / 2));
-  }
-}, [gridDimensions.columns, gridDimensions.rows]); // This will run whenever grid dimensions change
+  // Set cursor to center when grid dimensions are first established
+  useEffect(() => {
+    if (gridDimensions.columns > 0 && gridDimensions.rows > 0) {
+      setCursorX(Math.floor(gridDimensions.columns / 2));
+      setCursorY(Math.floor(gridDimensions.rows / 2));
+    }
+  }, [gridDimensions.columns, gridDimensions.rows]); // This will run whenever grid dimensions change
 
   // Helper function to draw line on grid
   const drawLineOnGrid = useCallback((
@@ -676,7 +682,7 @@ useEffect(() => {
 
     selectionTimerRef.current = setTimeout(() => {
       if (menuActiveRef.current) {
-        const menuLevels = getMenuLevels(shapeDrawingModeRef.current);
+        const menuLevels = getMenuLevels(shapeDrawingModeRef.current, isComplete);
         const currentLevel = menuLevels[menuLevelRef.current];
         const selectedItem = currentLevel.items[menuSelectionsRef.current[menuLevelRef.current]];
 
@@ -695,7 +701,7 @@ useEffect(() => {
   // Handle mode switch / menu control (S command)
   const handleModeSwitch = useCallback((mode: number) => {
     if (menuActiveRef.current) {
-      const menuLevels = getMenuLevels(shapeDrawingModeRef.current);
+      const menuLevels = getMenuLevels(shapeDrawingModeRef.current, isComplete);
       const newLevel = (menuLevelRef.current + 1) % menuLevels.length;
       setMenuLevel(newLevel);
       setLastBleAction(`📂 Menu level: ${menuLevels[newLevel].name}`);
@@ -721,7 +727,7 @@ useEffect(() => {
 
     if (menuActiveRef.current) {
       // In menu: navigate items
-      const menuLevels = getMenuLevels(shapeDrawingModeRef.current);
+      const menuLevels = getMenuLevels(shapeDrawingModeRef.current, isComplete);
       const currentLevel = menuLevels[menuLevelRef.current];
       const itemsCount = currentLevel.items.length;
       let newSelection = menuSelectionsRef.current[menuLevelRef.current];
@@ -745,7 +751,6 @@ useEffect(() => {
 
       return;
     }
-
     setLastBleAction(`Movement: ${direction}`);
 
     const { columns, rows } = gridDimensions;
@@ -822,6 +827,7 @@ useEffect(() => {
     }
   }, [cursorX, cursorY, currentMode, penState, isComplete, gridDimensions, handleDrawAtPosition, resetMenuTimeout, resetSelectionTimer, startSelectionTimer]);
 
+  // Execute menu action
   // Execute menu action
   const executeMenuAction = useCallback((action: string) => {
     console.log('Game: Executing menu action:', action);
@@ -946,10 +952,56 @@ useEffect(() => {
         setMenuActive(false);
         break;
 
+      // New actions
+      case 'skip-to-drawing':
+        onSkip();
+        setMenuActive(false);
+        setLastBleAction('⏭️ Skipping to drawing');
+        break;
+
+      case 'level-1':
+        setCurrentLevel(0);
+        resetLevel();
+        setMenuActive(false);
+        setLastBleAction('📋 Level 1 selected');
+        break;
+
+      case 'level-2':
+        setCurrentLevel(1);
+        resetLevel();
+        setMenuActive(false);
+        setLastBleAction('📋 Level 2 selected');
+        break;
+
+      case 'level-3':
+        setCurrentLevel(2);
+        resetLevel();
+        setMenuActive(false);
+        setLastBleAction('📋 Level 3 selected');
+        break;
+
+      case 'reset-level':
+        resetLevel();
+        setMenuActive(false);
+        setLastBleAction('🔄 Level reset');
+        break;
+
+      case 'next-level':
+        if (currentLevel < levels.length - 1) {
+          nextLevel();
+          setMenuActive(false);
+          setLastBleAction('⏩ Moving to next level');
+        } else {
+          onComplete();
+          setMenuActive(false);
+          setLastBleAction('🎉 Tutorial complete!');
+        }
+        break;
+
       default:
         console.log('Unknown action:', action);
     }
-  }, [moves]);
+  }, [moves, onSkip, currentLevel, levels.length, onComplete]);
 
   // Setup BLE event listeners for game
   useEffect(() => {
@@ -1072,7 +1124,7 @@ useEffect(() => {
   };
 
   // Get current menu items based on shape drawing mode
-  const menuLevels = getMenuLevels(shapeDrawingMode);
+  const menuLevels = getMenuLevels(shapeDrawingMode, isComplete);
   const currentMenuItems = menuLevels[menuLevel]?.items.map(item => ({
     id: item.id,
     name: item.name,
