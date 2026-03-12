@@ -8,7 +8,7 @@ const EEGWhiteboard = dynamic(() => import('@/app/components/EEGWhiteboard'), {
 
 export default function Home() {
   return (
-    <main className="min-h-screen p-5 md:p-10">
+    <main className="min-h-screen ">
       <EEGWhiteboard />
     </main>
   );

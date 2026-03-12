@@ -1,5 +1,6 @@
 // components/Header.tsx
 import React from 'react';
+import { MoveHorizontal, MoveVertical, MoveDiagonal, MoveDiagonal2, PencilOff, Pencil, Eraser } from 'lucide-react';
 
 interface HeaderProps {
   connected: boolean;
@@ -8,6 +9,7 @@ interface HeaderProps {
   onConnect: () => void;
   onDisconnect: () => void;
   onUndo: () => void;
+  showGame: () => void;
   onRedo: () => void;
   onClear: () => void;
   getModeName: (mode?: number) => string;
@@ -26,118 +28,142 @@ const Header: React.FC<HeaderProps> = ({
   onRedo,
   onClear,
   getModeName,
-  getModeSymbol,
-  getModeClass,
-  getPenStateName,
+  showGame,
 }) => {
-  const getPenStateColor = () => {
-    switch (penState) {
-      case 0: return 'bg-red-100 text-red-800 border-red-300';
-      case 1: return 'bg-green-100 text-green-800 border-green-300';
-      case 2: return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
-  };
-
-  const getPenStateIcon = () => {
-    switch (penState) {
-      case 0: return '❌';
-      case 1: return '✏️';
-      case 2: return '🧽';
-      default: return '?';
-    }
-  };
 
   return (
-    <div className="w-full max-w-7xl mb-8">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+    <div className="bg-[#0C1330] backdrop-blur-lg border-b border-white/10 p-2 md:p-4 shrink-0" style={{ height: '64px' }}>
+      <div className="h-full max-w-[100vw] mx-auto flex justify-between items-center gap-1 sm:gap-3">
         {/* Left: Title and Status */}
-        <div className="flex flex-col items-start gap-3">
-          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-[#00b4d8] to-[#0077b6] bg-clip-text text-transparent">
-            NeuroArt EEG Whiteboard
+        <div className="flex items-center gap-1 sm:gap-3 min-w-0 flex-shrink">
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold bg-blue-500 bg-clip-text text-transparent whitespace-nowrap">
+            NeuroArt.<a className='text-blue-400' href="#">Whiteboard</a>
           </h1>
-          
-          <div className="flex flex-wrap gap-3">
-            {/* Connection Status */}
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 ${connected ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300'}`}>
-              <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-              <span className="font-semibold">
-                {connected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
 
-            {/* Pen State */}
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-full border-2 ${getPenStateColor()}`}>
-              <span className="text-lg">{getPenStateIcon()}</span>
-              <span className="font-semibold">
-                {getPenStateName()}
-              </span>
+          <div className="hidden sm:flex items-center gap-1 md:gap-3">
+            {/* Pen State Display */}
+            <div className={`px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm ${penState === 0 ? 'bg-gray-800 text-gray-400 border border-gray-700' :
+              penState === 1 ? 'bg-green-800/30 text-green-300 border border-green-600' :
+                'bg-yellow-800/30 text-yellow-300 border border-yellow-600'
+              }`}>
+              {penState === 0 ? (
+                <span className="flex items-center gap-1">
+                  <PencilOff size={14} /> <span className="hidden lg:inline">Disabled</span>
+                </span>
+              ) : penState === 1 ? (
+                <span className="flex items-center gap-1">
+                  <Pencil size={14} /> <span className="hidden lg:inline">Drawing</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1">
+                  <Eraser size={14} /> <span className="hidden lg:inline">Erasing</span>
+                </span>
+              )}
             </div>
-
-            {/* Mode Indicator */}
-            <div className="flex items-center gap-2 px-4 py-2 rounded-full border-2 border-blue-300 bg-blue-100 text-blue-800">
-              <span className="text-lg font-bold">{getModeSymbol()}</span>
-              <span className="font-semibold">{getModeName()}</span>
+            <div
+              className={`px-2 md:px-3 py-1 rounded-lg flex items-center gap-1 md:gap-2 text-xs md:text-sm ${currentMode === 0
+                ? 'bg-blue-800/30 text-blue-300 border border-blue-600'
+                : currentMode === 1
+                  ? 'bg-green-800/30 text-green-300 border border-green-600'
+                  : currentMode === 2
+                    ? 'bg-purple-800/30 text-purple-300 border border-purple-600'
+                    : 'bg-pink-800/30 text-pink-300 border border-pink-600'
+                }`}
+            >
+              <span className="font-bold flex items-center">
+                {currentMode === 0 ? (
+                  <MoveHorizontal size={14} />
+                ) : currentMode === 1 ? (
+                  <MoveVertical size={14} />
+                ) : currentMode === 2 ? (
+                  <MoveDiagonal2 size={14} />
+                ) : (
+                  <MoveDiagonal size={14} />
+                )}
+              </span>
+              <span className="hidden lg:inline">{getModeName()}</span>
             </div>
           </div>
         </div>
 
         {/* Right: Controls */}
-        <div className="flex flex-wrap gap-3">
+        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto hide-scrollbar flex-shrink-0">
           {/* BLE Controls */}
-          <div className="flex gap-2">
+          <div className="flex gap-1 sm:gap-2">
             {!connected ? (
               <button
                 onClick={onConnect}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#00b4d8] to-[#0077b6] text-white rounded-lg hover:from-[#0096c7] hover:to-[#005f8a] transition-all shadow-md hover:shadow-lg"
+                className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 bg-[#0077b6] text-white rounded-lg hover:bg-[#0096c7] transition-all text-xs sm:text-sm whitespace-nowrap"
               >
-                <span>🔗</span>
-                <span className="font-semibold">Connect BLE</span>
+                <span className="text-sm">🔗</span>
+                <span className="hidden xs:inline sm:inline font-semibold">Connect NPG Lite device</span>
               </button>
             ) : (
               <button
                 onClick={onDisconnect}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-md hover:shadow-lg"
+                className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-md hover:shadow-lg text-xs sm:text-sm whitespace-nowrap"
               >
-                <span>🔌</span>
-                <span className="font-semibold">Disconnect</span>
+                <span className="text-sm">🔌</span>
+                <span className="hidden xs:inline sm:inline font-semibold">Disconnect</span>
               </button>
             )}
           </div>
 
           {/* Drawing Controls */}
-          <div className="flex gap-2">
+          <div className="flex gap-1 sm:gap-2">
             <button
               onClick={onUndo}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all shadow-md hover:shadow-lg"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-all shadow-md hover:shadow-lg text-xs sm:text-sm whitespace-nowrap"
               title="Undo (Ctrl+Z)"
             >
-              <span>↶</span>
+              <span className="text-sm">↶</span>
               <span className="hidden sm:inline font-semibold">Undo</span>
             </button>
-            
+
             <button
               onClick={onRedo}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-gray-700 to-gray-800 text-white rounded-lg hover:from-gray-800 hover:to-gray-900 transition-all shadow-md hover:shadow-lg"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-all shadow-md hover:shadow-lg text-xs sm:text-sm whitespace-nowrap"
               title="Redo (Ctrl+Y)"
             >
-              <span>↷</span>
+              <span className="text-sm">↷</span>
               <span className="hidden sm:inline font-semibold">Redo</span>
             </button>
-            
+
             <button
               onClick={onClear}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all shadow-md hover:shadow-lg"
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all shadow-md hover:shadow-lg text-xs sm:text-sm whitespace-nowrap"
               title="Clear Board"
             >
-              <span>🗑️</span>
+              <span className="text-sm">🗑️</span>
               <span className="hidden sm:inline font-semibold">Clear</span>
+            </button>
+
+            {/* Floating Game Button */}
+            <button
+              onClick={showGame}
+              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 border border-blue-800 text-white rounded-lg hover:bg-blue-600 transition-all shadow-md hover:shadow-lg text-xs sm:text-sm whitespace-nowrap"
+            >
+              <span className="text-base sm:text-lg md:text-xl">🎮</span>
+              <span className="hidden md:inline font-semibold">Practice Game</span>
             </button>
           </div>
         </div>
       </div>
 
-
+      <style jsx>{`
+        .hide-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .hide-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        @media (max-width: 640px) {
+          .xs\\:inline {
+            display: inline;
+          }
+        }
+      `}</style>
     </div>
   );
 };
