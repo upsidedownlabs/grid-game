@@ -7,9 +7,8 @@ import Whiteboard from './Whiteboard';
 import MenuPopup from './MenuPopup';
 import JawTimer from './JawTimer';
 import GameTutorial from './GameTutorial';
-import { BoardState, MenuItem, DrawingMode, PenState, MenuLevel } from '../types';
+import { BoardState, DrawingMode, PenState, MenuLevel } from '../types';
 import Link from "next/link";
-import html2canvas from 'html2canvas';
 import domtoimage from 'dom-to-image';
 
 // Types for shape drawing
@@ -71,7 +70,6 @@ const MENU_LEVELS: MenuLevel[] = [
       { id: 'clear-board', name: 'Clear Board', icon: '🧹', action: 'clear' },
       { id: 'exit', name: 'Exit Menu', icon: '❌', action: 'exit' },
       { id: 'practice-game', name: 'Start Practice Game', icon: '🎮', action: 'practice-game' },
-
     ]
   },
   {
@@ -89,7 +87,6 @@ const MENU_LEVELS: MenuLevel[] = [
 
 const EEGWhiteboard = () => {
   // State variables
-
   const [bluetoothDevice, setBluetoothDevice] = useState<BluetoothDevice | null>(null);
   const [characteristic, setCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -112,6 +109,12 @@ const EEGWhiteboard = () => {
     2: 0
   });
 
+  // Single source of truth for history - using ref for immediate access
+  const historyRef = useRef<BoardState[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+
+  const maxHistorySize = 100;
+
   // Current menu selection (derived from menuSelections)
   const menuSelection = menuSelections[menuLevel] || 0;
 
@@ -133,6 +136,7 @@ const EEGWhiteboard = () => {
     'In menu: M(8/9) to navigate, stay on option for 2s to select',
   ]);
   const [cellSize, setCellSize] = useState(24);
+  
   // Shape drawing state
   const [selectedShape, setSelectedShape] = useState<ShapeType>(null);
   const [shapeInitialPoint, setShapeInitialPoint] = useState<{ x: number; y: number } | null>(null);
@@ -152,9 +156,6 @@ const EEGWhiteboard = () => {
   // Refs
   const lastMoveTime = useRef(0);
   const moveDelay = useRef(200);
-  const history = useRef<BoardState[]>([]);
-  const historyIndex = useRef(-1);
-  const maxHistorySize = 100;
 
   // State refs
   const cursorXRef = useRef(cursorX);
@@ -168,6 +169,12 @@ const EEGWhiteboard = () => {
   const selectedShapeRef = useRef(selectedShape);
   const shapeInitialPointRef = useRef(shapeInitialPoint);
   const shapeDrawingModeRef = useRef(shapeDrawingMode);
+
+  // Force re-render counter for undo/redo
+  const [, setUpdateCounter] = useState(0);
+
+  // Flag to track if initial state has been saved
+  const initialSaveDoneRef = useRef(false);
 
   useEffect(() => {
     if (gridContainerRef.current && gridDimensions.columns > 0 && gridDimensions.rows > 0) {
@@ -214,7 +221,6 @@ const EEGWhiteboard = () => {
 
   // Log command
   const logCommand = useCallback((message: string) => {
-    //console.log(`Command Log: ${message}`);
     const timestamp = new Date().toLocaleTimeString();
     setCommandLog(prev => [...prev.slice(-19), `[${timestamp}] ${message}`]);
   }, []);
@@ -231,7 +237,10 @@ const EEGWhiteboard = () => {
     }
   }, [currentMode]);
 
+  // Save state to history
   const saveState = useCallback(() => {
+    if (grid.length === 0 || grid[0]?.length === 0) return;
+
     const state: BoardState = {
       board: grid.map(row => [...row]),
       cursorX,
@@ -244,29 +253,57 @@ const EEGWhiteboard = () => {
       timestamp: Date.now(),
     };
 
-    history.current = history.current.slice(0, historyIndex.current + 1);
-    history.current.push(state);
+    // If we're not at the end, remove future states
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+    }
+    
+    // Add new state
+    historyRef.current.push(state);
+    historyIndexRef.current++;
 
-    if (history.current.length > maxHistorySize) {
-      history.current.shift();
-    } else {
-      historyIndex.current++;
+    // Limit history size
+    if (historyRef.current.length > maxHistorySize) {
+      historyRef.current.shift();
+      historyIndexRef.current--;
+    }
+
+    console.log('State saved. Index:', historyIndexRef.current, 'Length:', historyRef.current.length);
+  }, [grid, cursorX, cursorY, currentMode, penState, menuActive, menuLevel, menuSelection]);
+
+  // Save initial state when grid is first created
+  useEffect(() => {
+    if (grid.length > 0 && grid[0]?.length > 0 && !initialSaveDoneRef.current) {
+      // Save initial state
+      const initialState: BoardState = {
+        board: grid.map(row => [...row]),
+        cursorX,
+        cursorY,
+        currentMode,
+        penState,
+        menuActive,
+        menuLevel,
+        menuSelection,
+        timestamp: Date.now(),
+      };
+      
+      historyRef.current = [initialState];
+      historyIndexRef.current = 0;
+      initialSaveDoneRef.current = true;
+      
+      console.log('Initial state saved');
     }
   }, [grid, cursorX, cursorY, currentMode, penState, menuActive, menuLevel, menuSelection]);
 
   // Reset menu timeout
   const resetMenuTimeout = useCallback(() => {
-    //console.log('Resetting menu timeout');
-
     if (menuTimeoutRef.current) {
       clearTimeout(menuTimeoutRef.current);
       menuTimeoutRef.current = null;
     }
 
     if (menuActiveRef.current) {
-      //console.log('Setting new 2s timeout');
       menuTimeoutRef.current = setTimeout(() => {
-        //console.log('Timeout executed, menuActive:', menuActiveRef.current);
         if (menuActiveRef.current) {
           setMenuActive(false);
           logCommand('⏰ Menu auto-closed (2s timeout)');
@@ -372,8 +409,6 @@ const EEGWhiteboard = () => {
   ) => {
     if (!shape) return;
 
-    //console.log('Drawing shape:', shape, 'from', start, 'to', end, 'penState:', penStateRef.current);
-
     const minX = Math.min(start.x, end.x);
     const maxX = Math.max(start.x, end.x);
     const minY = Math.min(start.y, end.y);
@@ -435,7 +470,6 @@ const EEGWhiteboard = () => {
       saveState();
       const pixelsDrawn = calculateShapePixels(shape, start, end);
       setDrawnCount(prev => prev + pixelsDrawn);
-      //console.log(`Shape completed, pixels drawn: ${pixelsDrawn}`);
     }, 0);
 
     logCommand(`📐 Drew ${shape} from (${start.x},${start.y}) to (${end.x},${end.y})`);
@@ -443,8 +477,6 @@ const EEGWhiteboard = () => {
 
   // Handle blink for shape point selection
   const handleBlinkForShape = useCallback((state: number) => {
-    //console.log('Blink received, state:', state, 'shapeDrawingMode:', shapeDrawingModeRef.current, 'selectedShape:', selectedShapeRef.current);
-
     if (!shapeDrawingModeRef.current || !selectedShapeRef.current) {
       // Normal pen state change when not in shape drawing mode
       if (state >= 0 && state <= 2) {
@@ -452,7 +484,6 @@ const EEGWhiteboard = () => {
         setLastActionTime(Date.now());
         const stateName = state === 0 ? 'Disabled' : state === 1 ? 'Pen' : 'Eraser';
         logCommand(`✏️ Pen state changed to: ${stateName}`);
-        //console.log('Pen state changed to:', stateName);
       }
       return;
     }
@@ -462,10 +493,8 @@ const EEGWhiteboard = () => {
       // First blink - set initial point
       setShapeInitialPoint({ x: cursorXRef.current, y: cursorYRef.current });
       logCommand(`📍 Shape initial point set at (${cursorXRef.current}, ${cursorYRef.current})`);
-      //console.log('Shape initial point set');
     } else {
       // Second blink - draw shape from initial to current point
-      //console.log('Drawing shape now...');
       drawShape(
         selectedShapeRef.current,
         shapeInitialPointRef.current,
@@ -482,7 +511,6 @@ const EEGWhiteboard = () => {
       setPenState(0);
 
       logCommand(`✅ Shape completed - Pen auto-disabled`);
-      //console.log('Shape completed, pen disabled');
     }
   }, [drawShape, logCommand]);
 
@@ -537,7 +565,6 @@ const EEGWhiteboard = () => {
   const handleMovement = useCallback((direction: number) => {
     // Only handle 8 and 9 as per device specification
     if (direction !== 8 && direction !== 9) {
-      //console.log('Ignoring invalid direction:', direction);
       return;
     }
 
@@ -671,7 +698,6 @@ const EEGWhiteboard = () => {
       // If menu is active: switch between menu levels
       const newLevel = (menuLevelRef.current + 1) % MENU_LEVELS.length;
       setMenuLevel(newLevel);
-      // Don't reset selection - use the stored selection for this level
       logCommand(`📂 Menu level: ${MENU_LEVELS[newLevel].name} (Selection: ${menuSelections[newLevel] + 1})`);
       resetMenuTimeout();
 
@@ -680,9 +706,7 @@ const EEGWhiteboard = () => {
       startSelectionTimer();
     } else {
       // If menu is not active: S command OPENS THE MENU
-      //console.log('Opening menu');
       setMenuActive(true);
-      // Keep the current level and selection (don't reset to 0)
       logCommand(`📋 Menu opened at level ${menuLevel + 1} - ${MENU_LEVELS[menuLevel].name}`);
 
       // IMPORTANT: Reset timeout immediately after opening menu
@@ -696,8 +720,6 @@ const EEGWhiteboard = () => {
   }, [logCommand, resetMenuTimeout, resetSelectionTimer, startSelectionTimer, menuLevel, menuSelections]);
 
   useEffect(() => {
-    //console.log('Menu active changed to:', menuActive);
-
     if (menuActive) {
       // Reset timeout when menu becomes active
       resetMenuTimeout();
@@ -717,14 +739,15 @@ const EEGWhiteboard = () => {
 
     if (seconds > 0) {
       logCommand(`🦷 Jaw timer: ${seconds}s`);
-      // No menu actions from jaw clench
     }
   }, [logCommand]);
+
   interface CharacteristicEvent extends Event {
     target: EventTarget & {
       value?: DataView;
     };
   }
+
   // Handle BLE data - only M, S, B, J from actual device
   const handleBLEData = useCallback((event: Event) => {
     // Type guard to check if it's a CharacteristicEvent
@@ -767,7 +790,6 @@ const EEGWhiteboard = () => {
         bleEmitter.emit('j', valueData);
         break;
       default:
-      //console.log('Unknown command:', command);
     }
   }, [logCommand]);
 
@@ -778,22 +800,18 @@ const EEGWhiteboard = () => {
     }
 
     const handleBLEMovement = (direction: number) => {
-      //console.log('Main app: Movement event', direction);
       handleMovement(direction);
     };
 
     const handleBLEModeSwitch = (mode: number) => {
-      //console.log('Main app: Mode switch event', mode);
       handleModeSwitch(mode);
     };
 
     const handleBLEPenState = (state: number) => {
-      //console.log('Main app: Pen state event', state);
       handleBlinkForShape(state);
     };
 
     const handleBLEJawTimer = (seconds: number) => {
-      //console.log('Main app: Jaw timer event', seconds);
       handleJawTimer(seconds);
     };
 
@@ -810,14 +828,12 @@ const EEGWhiteboard = () => {
     };
   }, [showGameTutorial, handleMovement, handleModeSwitch, handleBlinkForShape, handleJawTimer]);
 
-  // BLE connection (keep existing connection code)
+  // BLE connection
   const connectToBLE = async () => {
     try {
       if (!navigator.bluetooth) {
         throw new Error('Bluetooth not supported');
       }
-      console.log('connectToBLE called at:', new Date().toISOString());
-      console.trace(); // This will show the call stack
 
       logCommand('🔗 Searching for ESP32C6_EEG...');
 
@@ -934,7 +950,6 @@ const EEGWhiteboard = () => {
     logCommand('🔌 Disconnected from device');
   };
 
-  // In handleGridDimensionsUpdate, add logging:
   const handleGridDimensionsUpdate = useCallback((columns: number, rows: number) => {
     console.log('Grid dimensions update:', { columns, rows, currentGrid: grid });
     setGridDimensions({ columns, rows });
@@ -988,7 +1003,7 @@ const EEGWhiteboard = () => {
     saveState();
   }, [saveState]);
 
-  // Add this helper function inside your EEGWhiteboard component
+  // Save drawing with screenshot
   const saveDrawingWithScreenshot = async () => {
     const currentGrid = gridRef.current;
     const currentGridDimensions = gridDimensionsRef.current;
@@ -1037,51 +1052,39 @@ const EEGWhiteboard = () => {
       if (whiteboardContainer) {
         try {
           // Use dom-to-image to capture the whiteboard
-          // Options for better quality
           const options = {
-            bgcolor: '#111827', // Match your bg-gray-900 color
+            bgcolor: '#111827',
             style: {
               'background-color': '#111827',
               'transform': 'scale(1)',
               'transform-origin': 'top left'
             },
             filter: (node: Node) => {
-              // Exclude any elements that might cause issues
               if (node instanceof HTMLElement) {
-                // Don't exclude any elements - capture everything
                 return true;
               }
               return true;
             }
           };
 
-          // Get the PNG data URL
           const dataUrl = await domtoimage.toPng(whiteboardContainer as HTMLElement, options);
-
-          // Convert data URL to blob
           const response = await fetch(dataUrl);
           const blob = await response.blob();
-
-          // Create screenshot download link
           const screenshotUrl = URL.createObjectURL(blob);
           const screenshotLink = document.createElement('a');
           screenshotLink.href = screenshotUrl;
           screenshotLink.download = `${filenameBase}.png`;
 
-          // Trigger JSON download first
           document.body.appendChild(jsonLink);
           jsonLink.click();
           document.body.removeChild(jsonLink);
 
-          // Small delay to ensure JSON download starts
           await new Promise(resolve => setTimeout(resolve, 200));
 
-          // Then trigger screenshot download
           document.body.appendChild(screenshotLink);
           screenshotLink.click();
           document.body.removeChild(screenshotLink);
 
-          // Clean up URLs
           URL.revokeObjectURL(jsonUrl);
           URL.revokeObjectURL(screenshotUrl);
 
@@ -1093,11 +1096,9 @@ const EEGWhiteboard = () => {
           console.error('dom-to-image failed:', domToImageError);
           logCommand(`⚠️ Screenshot failed: ${domToImageError instanceof Error ? domToImageError.message : 'Unknown error'}`);
 
-          // Fallback: Try with different options
           try {
             logCommand('🔄 Retrying screenshot with simplified options...');
 
-            // Simplified options as fallback
             const fallbackOptions = {
               bgcolor: '#111827',
               quality: 1
@@ -1111,7 +1112,6 @@ const EEGWhiteboard = () => {
             screenshotLink.href = screenshotUrl;
             screenshotLink.download = `${filenameBase}.png`;
 
-            // Trigger JSON download
             document.body.appendChild(jsonLink);
             jsonLink.click();
             document.body.removeChild(jsonLink);
@@ -1130,7 +1130,6 @@ const EEGWhiteboard = () => {
 
           } catch (fallbackError) {
             console.error('Fallback screenshot also failed:', fallbackError);
-            // Just save JSON
             document.body.appendChild(jsonLink);
             jsonLink.click();
             document.body.removeChild(jsonLink);
@@ -1141,7 +1140,6 @@ const EEGWhiteboard = () => {
           }
         }
       } else {
-        // Whiteboard container not found - just save JSON
         document.body.appendChild(jsonLink);
         jsonLink.click();
         document.body.removeChild(jsonLink);
@@ -1154,7 +1152,6 @@ const EEGWhiteboard = () => {
       console.error('Save failed:', error);
       logCommand(`❌ Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 
-      // Try to at least save the JSON if everything fails
       try {
         const jsonString = JSON.stringify(drawingData, null, 2);
         const jsonBlob = new Blob([jsonString], { type: 'application/json' });
@@ -1180,11 +1177,8 @@ const EEGWhiteboard = () => {
     }
   };
 
-
-  // In executeMenuAction function, add the new case
+  // Execute menu action
   const executeMenuAction = useCallback((action: string) => {
-    //console.log('Executing menu action:', action);
-
     switch (action) {
       // Mode changes
       case 'mode-horizontal':
@@ -1220,15 +1214,21 @@ const EEGWhiteboard = () => {
 
       // UNDO action
       case 'undo':
-        if (historyIndex.current > 0) {
-          historyIndex.current--;
-          const state = history.current[historyIndex.current];
+        if (historyIndexRef.current > 0) {
+          historyIndexRef.current--;
+          const state = historyRef.current[historyIndexRef.current];
+          
           setGrid(state.board || []);
           setCursorX(state.cursorX);
           setCursorY(state.cursorY);
           setCurrentMode(state.currentMode);
           setPenState(state.penState);
           setMenuActive(false);
+          
+          // Force re-render
+          setUpdateCounter(prev => prev + 1);
+          
+          console.log('Undo - New index:', historyIndexRef.current);
           logCommand('↶ Undo completed');
         } else {
           logCommand('⚠️ Nothing to undo');
@@ -1237,15 +1237,21 @@ const EEGWhiteboard = () => {
 
       // REDO action
       case 'redo':
-        if (historyIndex.current < history.current.length - 1) {
-          historyIndex.current++;
-          const state = history.current[historyIndex.current];
+        if (historyIndexRef.current < historyRef.current.length - 1) {
+          historyIndexRef.current++;
+          const state = historyRef.current[historyIndexRef.current];
+          
           setGrid(state.board || []);
           setCursorX(state.cursorX);
           setCursorY(state.cursorY);
           setCurrentMode(state.currentMode);
           setPenState(state.penState);
           setMenuActive(false);
+          
+          // Force re-render
+          setUpdateCounter(prev => prev + 1);
+          
+          console.log('Redo - New index:', historyIndexRef.current);
           logCommand('↷ Redo completed');
         } else {
           logCommand('⚠️ Nothing to redo');
@@ -1253,10 +1259,11 @@ const EEGWhiteboard = () => {
         break;
 
       case 'practice-game':
-        setShowGameTutorial(true); // Game tutorial dikhao
-        setMenuActive(false); // Menu band karo
+        setShowGameTutorial(true);
+        setMenuActive(false);
         logCommand('🎮 Starting Practice Game');
         break;
+
       // Shape tools
       case 'shape-line':
         setSelectedShape('line');
@@ -1306,8 +1313,6 @@ const EEGWhiteboard = () => {
         break;
 
       // File operations
-      // In executeMenuAction function, update the save case:
-
       case 'save':
         saveDrawingWithScreenshot();
         break;
@@ -1343,9 +1348,8 @@ const EEGWhiteboard = () => {
         break;
 
       default:
-      //console.log('Unknown action:', action);
     }
-  }, [grid, cursorX, cursorY, currentMode, penState, saveState, logCommand, history]);
+  }, [logCommand, saveState]);
 
   // Update refs
   useEffect(() => {
@@ -1360,7 +1364,7 @@ const EEGWhiteboard = () => {
     selectedShapeRef.current = selectedShape;
     shapeInitialPointRef.current = shapeInitialPoint;
     shapeDrawingModeRef.current = shapeDrawingMode;
-    gridRef.current = grid; // Add this line
+    gridRef.current = grid;
   }, [cursorX, cursorY, currentMode, penState, menuActive, menuLevel, menuSelections, gridDimensions, selectedShape, shapeInitialPoint, shapeDrawingMode, grid]);
 
   // Add cancel handler for shape drawing
@@ -1381,7 +1385,7 @@ const EEGWhiteboard = () => {
     action: () => executeMenuAction(item.action)
   })) || [];
 
-  // Shape Drawing Indicator Component - Updated with cancel hint
+  // Shape Drawing Indicator Component
   const ShapeDrawingIndicator = () => {
     if (!shapeDrawingMode || !selectedShape) return null;
 
@@ -1418,6 +1422,11 @@ const EEGWhiteboard = () => {
     );
   };
 
+  // Debug useEffect to monitor history changes
+  useEffect(() => {
+    console.log('History updated - Index:', historyIndexRef.current, 'Length:', historyRef.current.length);
+  }, [historyIndexRef.current, historyRef.current.length]);
+
   useEffect(() => {
     const updateCursorPixelPosition = () => {
       const gridContainer = document.querySelector('[data-grid-container="true"]');
@@ -1450,6 +1459,44 @@ const EEGWhiteboard = () => {
     };
   }, [cursorX, cursorY, gridDimensions]);
 
+  // Undo handler for Header
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current > 0) {
+      historyIndexRef.current--;
+      const state = historyRef.current[historyIndexRef.current];
+      
+      setGrid(state.board || []);
+      setCursorX(state.cursorX);
+      setCursorY(state.cursorY);
+      setCurrentMode(state.currentMode);
+      setPenState(state.penState);
+      
+      // Force re-render
+      setUpdateCounter(prev => prev + 1);
+      
+      logCommand('↶ Undo');
+    }
+  }, [logCommand]);
+
+  // Redo handler for Header
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyIndexRef.current++;
+      const state = historyRef.current[historyIndexRef.current];
+      
+      setGrid(state.board || []);
+      setCursorX(state.cursorX);
+      setCursorY(state.cursorY);
+      setCurrentMode(state.currentMode);
+      setPenState(state.penState);
+      
+      // Force re-render
+      setUpdateCounter(prev => prev + 1);
+      
+      logCommand('↷ Redo');
+    }
+  }, [logCommand]);
+
   // Render Game or Main App
   if (showGameTutorial) {
     return (
@@ -1475,31 +1522,9 @@ const EEGWhiteboard = () => {
         penState={penState}
         onConnect={connectToBLE}
         onDisconnect={disconnect}
-        onUndo={() => {
-          if (historyIndex.current > 0) {
-            historyIndex.current--;
-            const state = history.current[historyIndex.current];
-            setGrid(state.board || []);
-            setCursorX(state.cursorX);
-            setCursorY(state.cursorY);
-            setCurrentMode(state.currentMode);
-            setPenState(state.penState);
-            logCommand('↶ Undo');
-          }
-        }}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         showGame={() => setShowGameTutorial(true)}
-        onRedo={() => {
-          if (historyIndex.current < history.current.length - 1) {
-            historyIndex.current++;
-            const state = history.current[historyIndex.current];
-            setGrid(state.board || []);
-            setCursorX(state.cursorX);
-            setCursorY(state.cursorY);
-            setCurrentMode(state.currentMode);
-            setPenState(state.penState);
-            logCommand('↷ Redo');
-          }
-        }}
         onClear={() => {
           setGrid(prev => prev.map(row => row.map(() => false)));
           setDrawnCount(0);
@@ -1543,7 +1568,7 @@ const EEGWhiteboard = () => {
         <JawTimer seconds={timerSeconds} />
       )}
 
-      <div style={{ flex: '1 1 0%', minHeight: 0, position: 'relative' }}>
+      <div className="flex-1 min-h-0 relative">
         <Whiteboard
           ref={gridContainerRef}
           cursorX={cursorX}
@@ -1591,15 +1616,15 @@ const EEGWhiteboard = () => {
         }}
       />
 
-      <div className="bg-[#0C1330] backdrop-blur-lg border-t border-white/10 shrink-0" style={{ height: '64px' }}>
+      <div className="bg-black/60 backdrop-blur-lg border-t border-white/10 shrink-0 h-16">
         <div className="h-full max-w-[100vw] mx-auto px-3">
           <div className="flex h-full items-center justify-between">
-            <p className="text-xl text-muted-foreground text-white">
+            <p className="text-sm text-muted-foreground text-white">
               Made with ❤️ by <Link href="https://upsidedownlabs.tech/" target="_blank">
                 Upside Down Labs
               </Link>
             </p>
-            <div className="text-xl text-white/80">
+            <div className="text-sm text-white/80">
               Grid: {gridDimensions.columns} × {gridDimensions.rows} | Cursor: ({cursorX}, {cursorY})
               {shapeDrawingMode && shapeInitialPoint && (
                 <span className="ml-4 text-blue-400">

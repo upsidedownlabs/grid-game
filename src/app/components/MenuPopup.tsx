@@ -1,4 +1,3 @@
-// components/MenuPopup.tsx
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -37,6 +36,7 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
 }) => {
   const popupRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: 0, top: 0, arrowLeft: 12 });
+  const [isPositionCalculated, setIsPositionCalculated] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -57,11 +57,12 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
 
   // Calculate position whenever cursor pixel position changes
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      setIsPositionCalculated(false);
+      return;
+    }
 
     const calculatePosition = () => {
-      if (!popupRef.current) return;
-
       // Calculate menu dimensions
       const itemHeight = 38;
       const headerHeight = 32;
@@ -73,47 +74,30 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
       const viewportHeight = window.innerHeight;
       const padding = 15;
 
-      // Use cursor pixel position from props
-      const cursorXpx = cursorPixelX;
-      const cursorYpx = cursorPixelY;
+      // Get cursor position - use pixel coordinates if available, otherwise calculate from grid
+      let cursorXpx = cursorPixelX;
+      let cursorYpx = cursorPixelY;
 
-      // If cursor pixel position is invalid (0,0), try to calculate it
+      // If pixel coordinates are not available, calculate from grid
       if (cursorXpx === 0 && cursorYpx === 0) {
-        // Fallback: try to get grid container and calculate
         const gridContainer = document.querySelector('[data-grid-container="true"]');
         if (gridContainer && gridDimensions.columns > 0 && gridDimensions.rows > 0) {
           const gridRect = gridContainer.getBoundingClientRect();
           const cellWidth = gridRect.width / gridDimensions.columns;
           const cellHeight = gridRect.height / gridDimensions.rows;
           
-          // Use cursorX and cursorY from props to calculate position
-          const calculatedX = gridRect.left + (cursorX * cellWidth) + (cellWidth / 2);
-          const calculatedY = gridRect.top + (cursorY * cellHeight) + (cellHeight / 2);
-          
-          // Use calculated values
-          calculatePositionWithValues(calculatedX, calculatedY, menuWidth, menuHeight, viewportWidth, viewportHeight, padding);
-          return;
+          cursorXpx = gridRect.left + (cursorX * cellWidth) + (cellWidth / 2);
+          cursorYpx = gridRect.top + (cursorY * cellHeight) + (cellHeight / 2);
+        } else {
+          // Fallback to center of screen if we can't calculate
+          cursorXpx = viewportWidth / 2;
+          cursorYpx = viewportHeight / 2;
         }
-      } else {
-        // Use the provided cursor pixel position
-        calculatePositionWithValues(cursorXpx, cursorYpx, menuWidth, menuHeight, viewportWidth, viewportHeight, padding);
       }
-    };
 
-    const calculatePositionWithValues = (
-      cursorXpx: number,
-      cursorYpx: number,
-      menuWidth: number,
-      menuHeight: number,
-      viewportWidth: number,
-      viewportHeight: number,
-      padding: number
-    ) => {
       // Calculate available space
       const spaceRight = viewportWidth - cursorXpx - padding;
       const spaceLeft = cursorXpx - padding;
-      const spaceBottom = viewportHeight - cursorYpx - padding;
-      const spaceTop = cursorYpx - padding;
 
       let left, top, arrowLeft;
 
@@ -148,11 +132,22 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
       left = Math.max(padding, Math.min(left, viewportWidth - menuWidth - padding));
 
       setPosition({ left, top, arrowLeft });
+      setIsPositionCalculated(true);
     };
 
-    // Small delay to ensure DOM is ready
+    // Calculate position immediately
+    calculatePosition();
+
+    // Also calculate after a small delay to ensure DOM is ready
     const timeoutId = setTimeout(calculatePosition, 50);
-    return () => clearTimeout(timeoutId);
+
+    // Add resize listener
+    window.addEventListener('resize', calculatePosition);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', calculatePosition);
+    };
   }, [active, cursorPixelX, cursorPixelY, cursorX, cursorY, items.length, gridDimensions]);
 
   // Show selection timer indicator
@@ -174,6 +169,7 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
     };
   }, [active, selection]);
 
+  // Don't render if not active OR position hasn't been calculated yet
   if (!active) return null;
 
   // Calculate menu dimensions
@@ -202,6 +198,9 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
       style={{
         left: `${position.left}px`,
         top: `${position.top}px`,
+        // Add a fade-in effect when position is calculated
+        opacity: isPositionCalculated ? 1 : 0,
+        transition: 'opacity 0.15s ease-in-out',
       }}
     >
       <div 
@@ -310,38 +309,8 @@ const MenuPopup: React.FC<MenuPopupProps> = ({
           })}
         </div>
 
-        {/* Footer */}
-        <div 
-          className="px-3 border-t border-gray-100 bg-gray-50/50"
-          style={{ height: `${footerHeight}px` }}
-        >
-          <div className="flex h-full items-center justify-between text-[9px] text-gray-400">
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-gray-200 rounded-sm flex items-center justify-center text-gray-600">M</span>
-              navigate
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-gray-200 rounded-sm flex items-center justify-center text-gray-600">S</span>
-              switch
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-gray-200 rounded-sm flex items-center justify-center text-gray-600">2s</span>
-              select
-            </span>
-          </div>
-        </div>
 
-        {/* Arrow pointing to cursor */}
-        <div
-          className={`
-            absolute w-2 h-2 bg-white border-t border-l border-gray-200 rotate-45
-            ${isArrowOnRight ? '-right-1' : '-left-1'}
-            top-1/2 -translate-y-1/2
-          `}
-          style={{
-            borderColor: isArrowOnRight ? '#e5e7eb transparent transparent #e5e7eb' : '#e5e7eb #e5e7eb transparent transparent',
-          }}
-        />
+
       </div>
     </div>
   );

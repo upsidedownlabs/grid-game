@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
-import { PenState, DrawingMode, MenuLevel, MenuItem } from '../types';
+import { PenState, DrawingMode, MenuLevel, MenuItem, BoardState } from '../types';
 import { MoveHorizontal, MoveVertical, MoveDiagonal, MoveDiagonal2, PencilOff, Pencil, Eraser } from 'lucide-react';
 import MenuPopup from './MenuPopup';
 
@@ -86,7 +86,6 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
   const [currentLevel, setCurrentLevel] = useState(0);
   const [playerGrid, setPlayerGrid] = useState<boolean[][]>([]);
   const [moves, setMoves] = useState(0);
-  const [showHint, setShowHint] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [cursorX, setCursorX] = useState(0);
   const [cursorY, setCursorY] = useState(0);
@@ -98,6 +97,14 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
   const [timeLeft, setTimeLeft] = useState(300);
   const [lastBleAction, setLastBleAction] = useState('');
 
+  // History for undo/redo
+  const historyRef = useRef<BoardState[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const maxHistorySize = 50;
+  const initialSaveDoneRef = useRef(false);
+
+  // Force re-render counter for undo/redo
+  const [, setUpdateCounter] = useState(0);
 
   // Menu state
   const [menuActive, setMenuActive] = useState(false);
@@ -204,6 +211,116 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       targetGrid: [] // Will be generated based on grid dimensions
     }
   ];
+
+  // Save state to history
+  const saveState = useCallback(() => {
+    if (playerGrid.length === 0 || playerGrid[0]?.length === 0) return;
+
+    const state: BoardState = {
+      board: playerGrid.map(row => [...row]),
+      cursorX,
+      cursorY,
+      currentMode,
+      penState,
+      menuActive,
+      menuLevel,
+      menuSelection,
+      timestamp: Date.now(),
+    };
+
+    // If we're not at the end, remove future states
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+    }
+
+    // Add new state
+    historyRef.current.push(state);
+    historyIndexRef.current++;
+
+    // Limit history size
+    if (historyRef.current.length > maxHistorySize) {
+      historyRef.current.shift();
+      historyIndexRef.current--;
+    }
+
+    console.log('Game: State saved. Index:', historyIndexRef.current, 'Length:', historyRef.current.length);
+  }, [playerGrid, cursorX, cursorY, currentMode, penState, menuActive, menuLevel, menuSelection]);
+
+  // Save initial state when grid is first created
+  useEffect(() => {
+    if (playerGrid.length > 0 && playerGrid[0]?.length > 0 && !initialSaveDoneRef.current) {
+      // Save initial state
+      const initialState: BoardState = {
+        board: playerGrid.map(row => [...row]),
+        cursorX,
+        cursorY,
+        currentMode,
+        penState,
+        menuActive,
+        menuLevel,
+        menuSelection,
+        timestamp: Date.now(),
+      };
+
+      historyRef.current = [initialState];
+      historyIndexRef.current = 0;
+      initialSaveDoneRef.current = true;
+
+      console.log('Game: Initial state saved');
+    }
+  }, [playerGrid, cursorX, cursorY, currentMode, penState, menuActive, menuLevel, menuSelection]);
+
+  // Undo handler
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current > 0) {
+      historyIndexRef.current--;
+      const state = historyRef.current[historyIndexRef.current];
+
+      setPlayerGrid(state.board?.map(row => [...row]) || []);
+      setCursorX(state.cursorX);
+      setCursorY(state.cursorY);
+      setCurrentMode(state.currentMode);
+      setPenState(state.penState);
+      setMenuActive(false);
+
+      // Update moves count (optional - you can decide if undo should count as a move)
+      setMoves(prev => Math.max(0, prev - 1));
+
+      // Force re-render
+      setUpdateCounter(prev => prev + 1);
+
+      setLastBleAction('↶ Undo');
+      console.log('Game: Undo - New index:', historyIndexRef.current);
+    } else {
+      setLastBleAction('⚠️ Nothing to undo');
+    }
+  }, []);
+
+  // Redo handler
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyIndexRef.current++;
+      const state = historyRef.current[historyIndexRef.current];
+
+      setPlayerGrid(state.board?.map(row => [...row]) || []);
+      setCursorX(state.cursorX);
+      setCursorY(state.cursorY);
+      setCurrentMode(state.currentMode);
+      setPenState(state.penState);
+      setMenuActive(false);
+
+      // Update moves count (optional)
+      setMoves(prev => prev + 1);
+
+      // Force re-render
+      setUpdateCounter(prev => prev + 1);
+
+      setLastBleAction('↷ Redo');
+      console.log('Game: Redo - New index:', historyIndexRef.current);
+    } else {
+      setLastBleAction('⚠️ Nothing to redo');
+    }
+  }, []);
 
   // Generate target grid based on current dimensions
   const generateTargetGrid = useCallback((columns: number, rows: number, levelId: number): boolean[][] => {
@@ -485,7 +602,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       setCursorX(Math.floor(gridDimensions.columns / 2));
       setCursorY(Math.floor(gridDimensions.rows / 2));
     }
-  }, [gridDimensions.columns, gridDimensions.rows]); // This will run whenever grid dimensions change
+  }, [gridDimensions.columns, gridDimensions.rows]);
 
   // Helper function to draw line on grid
   const drawLineOnGrid = useCallback((
@@ -589,7 +706,8 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
     });
 
     setMoves(prev => prev + 10);
-  }, [drawLineOnGrid]);
+    saveState();
+  }, [drawLineOnGrid, saveState]);
 
   // Handle blink for shape point selection
   const handleBlinkForShape = useCallback((state: number) => {
@@ -600,6 +718,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(state as PenState);
         setLastBleAction(`Pen: ${state === 0 ? 'Off' : state === 1 ? 'Draw' : 'Erase'}`);
         console.log('Game: Pen state changed to:', state);
+        saveState();
       }
       return;
     }
@@ -623,8 +742,9 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       setPenState(0);
       setLastBleAction('✅ Shape completed - Pen off');
       console.log('Game: Shape completed, pen disabled');
+      saveState();
     }
-  }, [drawShape]);
+  }, [drawShape, saveState]);
 
   // Handle drawing at position
   const handleDrawAtPosition = useCallback((x: number, y: number) => {
@@ -647,7 +767,9 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       }
       return newGrid;
     });
-  }, [penState, isComplete, playerGrid]);
+
+    saveState();
+  }, [penState, isComplete, playerGrid, saveState]);
 
   // Reset menu timeout
   const resetMenuTimeout = useCallback(() => {
@@ -828,7 +950,6 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
   }, [cursorX, cursorY, currentMode, penState, isComplete, gridDimensions, handleDrawAtPosition, resetMenuTimeout, resetSelectionTimer, startSelectionTimer]);
 
   // Execute menu action
-  // Execute menu action
   const executeMenuAction = useCallback((action: string) => {
     console.log('Game: Executing menu action:', action);
 
@@ -836,31 +957,50 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       case 'mode-horizontal':
         setCurrentMode(0);
         setLastBleAction('↔️ Mode: Horizontal');
+        saveState();
         break;
       case 'mode-vertical':
         setCurrentMode(1);
         setLastBleAction('↕️ Mode: Vertical');
+        saveState();
         break;
       case 'mode-diagonal-nw-se':
         setCurrentMode(2);
         setLastBleAction('↖️ Mode: Diagonal NW-SE');
+        saveState();
         break;
       case 'mode-diagonal-ne-sw':
         setCurrentMode(3);
         setLastBleAction('↗️ Mode: Diagonal NE-SW');
+        saveState();
         break;
 
       case 'pen-0':
         setPenState(0);
         setLastBleAction('🚫 Pen disabled');
+        saveState();
         break;
       case 'pen-1':
         setPenState(1);
         setLastBleAction('✏️ Pen enabled');
+        saveState();
         break;
       case 'pen-2':
         setPenState(2);
         setLastBleAction('🧽 Eraser enabled');
+        saveState();
+        break;
+
+      // UNDO action
+      case 'undo':
+        handleUndo();
+        setMenuActive(false);
+        break;
+
+      // REDO action
+      case 'redo':
+        handleRedo();
+        setMenuActive(false);
         break;
 
       case 'shape-line':
@@ -871,6 +1011,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(1);
         setMenuActive(false);
         setLastBleAction('📏 Line tool - Blink to set start');
+        saveState();
         break;
       case 'shape-rect':
         setSelectedShape('rectangle');
@@ -880,6 +1021,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(1);
         setMenuActive(false);
         setLastBleAction('⬜ Rectangle tool - Blink to set start');
+        saveState();
         break;
       case 'shape-tri':
         setSelectedShape('triangle');
@@ -889,6 +1031,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(1);
         setMenuActive(false);
         setLastBleAction('🔺 Triangle tool - Blink to set start');
+        saveState();
         break;
       case 'shape-pixel':
         setSelectedShape('pixel');
@@ -898,6 +1041,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(1);
         setMenuActive(false);
         setLastBleAction('🔲 Pixel mode - Blink to set start');
+        saveState();
         break;
 
       case 'shape-cancel':
@@ -908,6 +1052,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(0);
         setMenuActive(false);
         setLastBleAction('❌ Shape cancelled');
+        saveState();
         break;
 
       case 'clear':
@@ -915,6 +1060,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setMoves(0);
         setLastBleAction('🧹 Board cleared');
         setMenuActive(false);
+        saveState();
         break;
 
       case 'new':
@@ -927,24 +1073,12 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
         setPenState(0);
         setLastBleAction('🆕 New board');
         setMenuActive(false);
+        saveState();
         break;
 
       case 'exit':
         setMenuActive(false);
         setLastBleAction('❌ Menu closed');
-        break;
-
-      case 'undo':
-        // Simple undo for game - clear last few moves
-        setPlayerGrid(prev => prev.map(row => row.map(() => false)));
-        setMoves(Math.max(0, moves - 5));
-        setLastBleAction('↶ Undo');
-        setMenuActive(false);
-        break;
-
-      case 'redo':
-        setLastBleAction('↷ Redo (not implemented)');
-        setMenuActive(false);
         break;
 
       case 'save':
@@ -956,41 +1090,41 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       case 'skip-to-drawing':
         onSkip();
         setMenuActive(false);
-        setLastBleAction('⏭️ Skipping to drawing');
+        setLastBleAction('Skipping to drawing');
         break;
 
       case 'level-1':
         setCurrentLevel(0);
         resetLevel();
         setMenuActive(false);
-        setLastBleAction('📋 Level 1 selected');
+        setLastBleAction('Level 1 selected');
         break;
 
       case 'level-2':
         setCurrentLevel(1);
         resetLevel();
         setMenuActive(false);
-        setLastBleAction('📋 Level 2 selected');
+        setLastBleAction('Level 2 selected');
         break;
 
       case 'level-3':
         setCurrentLevel(2);
         resetLevel();
         setMenuActive(false);
-        setLastBleAction('📋 Level 3 selected');
+        setLastBleAction('Level 3 selected');
         break;
 
       case 'reset-level':
         resetLevel();
         setMenuActive(false);
-        setLastBleAction('🔄 Level reset');
+        setLastBleAction('Level reset');
         break;
 
       case 'next-level':
         if (currentLevel < levels.length - 1) {
           nextLevel();
           setMenuActive(false);
-          setLastBleAction('⏩ Moving to next level');
+          setLastBleAction('Moving to next level');
         } else {
           onComplete();
           setMenuActive(false);
@@ -1001,7 +1135,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       default:
         console.log('Unknown action:', action);
     }
-  }, [moves, onSkip, currentLevel, levels.length, onComplete]);
+  }, [moves, onSkip, currentLevel, levels.length, onComplete, handleUndo, handleRedo, saveState]);
 
   // Setup BLE event listeners for game
   useEffect(() => {
@@ -1102,6 +1236,14 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       setShapeInitialPoint(null);
       setPreviewShape(null);
       setMenuActive(false);
+
+      // Reset history for new level
+      historyRef.current = [];
+      historyIndexRef.current = -1;
+      initialSaveDoneRef.current = false;
+
+      // Force re-render
+      setUpdateCounter(prev => prev + 1);
     } else {
       onComplete();
     }
@@ -1121,6 +1263,14 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
     setShapeInitialPoint(null);
     setPreviewShape(null);
     setMenuActive(false);
+
+    // Reset history for reset level
+    historyRef.current = [];
+    historyIndexRef.current = -1;
+    initialSaveDoneRef.current = false;
+
+    // Force re-render
+    setUpdateCounter(prev => prev + 1);
   };
 
   // Get current menu items based on shape drawing mode
@@ -1336,19 +1486,12 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                   <div className="bg-gray-800/50 rounded-lg p-1 md:p-2">
                     <div className="text-gray-400 text-xs">Accuracy</div>
                     <div className="font-bold text-sm md:text-base text-white">{accuracy.toFixed(1)}%</div>
-                    <div className="h-1 bg-gray-800 rounded-full mt-1 overflow-hidden">
-                      <div className="h-full bg-green-600 transition-all duration-500" style={{ width: `${accuracy}%` }} />
-                    </div>
                   </div>
 
                   {/* Moves */}
                   <div className="bg-gray-800/50 rounded-lg p-1 md:p-2">
                     <div className="text-gray-400 text-xs">Moves</div>
                     <div className="font-bold text-sm md:text-base text-white">{moves}</div>
-                    <div className="h-1 bg-gray-800 rounded-full mt-1 overflow-hidden">
-                      <div className={`h-full transition-all duration-500 ${moves > level.maxMoves * 0.8 ? 'bg-red-600' : moves > level.maxMoves * 0.6 ? 'bg-yellow-600' : 'bg-blue-600'}`}
-                        style={{ width: `${Math.min(100, (moves / level.maxMoves) * 100)}%` }} />
-                    </div>
                   </div>
 
                   {/* Time Left */}
@@ -1356,9 +1499,6 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                     <div className="text-gray-400 text-xs">Time</div>
                     <div className={`font-bold text-sm md:text-base ${timeLeft < 60 ? 'text-red-400' : 'text-white'}`}>
                       {minutes}:{seconds.toString().padStart(2, '0')}
-                    </div>
-                    <div className="h-1 bg-gray-800 rounded-full mt-1 overflow-hidden">
-                      <div className="h-full bg-purple-600 transition-all duration-500" style={{ width: `${(timeLeft / 300) * 100}%` }} />
                     </div>
                   </div>
                 </div>
@@ -1405,23 +1545,32 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
               {/* Levels List - Scrollable but compact */}
               <div className="bg-black/40 rounded-xl border border-gray-700 p-2 md:p-3 lg:p-4 flex-1 overflow-hidden flex flex-col min-h-0">
                 <h3 className="text-sm md:text-base lg:text-lg font-bold text-white mb-1 md:mb-2">Levels</h3>
-                <div className="space-y-1 overflow-y-auto flex-1 pr-1 scrollbar-thin scrollbar-thumb-gray-700">
+                <div className="space-x-1 2xl:block flex 2xl:space-y-1 pr-1 ">
                   {levels.map((levelItem, index) => (
                     <button
                       key={levelItem.id}
                       onClick={() => !isComplete && setCurrentLevel(index)}
                       disabled={isComplete}
                       className={`w-full flex items-center p-1.5 md:p-2 rounded-lg transition-all text-left ${currentLevel === index
-                        ? 'bg-cyan-800/50 border border-cyan-600'
-                        : index < currentLevel
-                          ? 'bg-green-800/30 border border-green-700'
-                          : 'bg-gray-800/30 border border-gray-700 hover:bg-gray-700/30'
+                          ? 'bg-cyan-800/50 border border-cyan-600'
+                          : index < currentLevel
+                            ? 'bg-green-800/30 border border-green-700'
+                            : 'bg-gray-800/30 border border-gray-700 hover:bg-gray-700/30'
                         }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
                         <div className="min-w-0 flex-1">
-                          <div className="text-white font-medium text-xs md:text-sm truncate">Level {levelItem.id}</div>
-                          <div className="text-gray-400 text-[10px] md:text-xs truncate hidden sm:block">{levelItem.title.split(': ')[1]}</div>
+                          <div className="block 2xl:hidden text-white font-medium text-xs md:text-sm truncate">
+                            L{levelItem.id}
+                          </div>
+                          <div className="hidden 2xl:block ">
+                            <div className="text-white font-medium text-xs md:text-sm truncate">
+                              Level {levelItem.id}
+                            </div>
+                            <div className="text-gray-400 text-[10px] md:text-xs truncate hidden sm:block">
+                              {levelItem.title.split(': ')[1]}
+                            </div>
+                          </div>
                         </div>
                       </div>
                       {index < currentLevel && (
@@ -1438,7 +1587,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
               {/* Game Grid Container */}
               <div
                 ref={gridContainerRef}
-                className="flex-1 rounded-xl border border-gray-600 p-4 flex items-center justify-center overflow-hidden"
+                className="flex-1 rounded-xl border border-gray-600 p-4 flex items-center justify-center overflow-hidden "
               >
                 {gridDimensions.columns > 0 && gridDimensions.rows > 0 && (
                   <div
@@ -1481,7 +1630,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                         } else if (isPreview) {
                           dotClasses += ' bg-blue-400/50 border border-blue-400 animate-pulse';
                         } else if (isTarget) {
-                          dotClasses += ' bg-blue-800/5 '// Subtle target indicator
+                          dotClasses += ' bg-blue-800/5 ';// Subtle target indicator
                         } else {
                           dotClasses += ' bg-gray-800/50 border border-gray-800';
                         }
@@ -1630,11 +1779,11 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-center">
-                  <div className="text-lg font-bold text-white">{currentLevel + 1}/3</div>
+                  <div className="text-sm font-bold text-white">{currentLevel + 1}/3</div>
                   <div className="text-gray-400 text-xs">Level</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-lg font-bold text-white">{score}</div>
+                  <div className="text-sm font-bold text-white">{score}</div>
                   <div className="text-gray-400 text-xs">Score</div>
                 </div>
               </div>
