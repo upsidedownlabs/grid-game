@@ -1537,7 +1537,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                 </div>
 
                 {/* Last BLE Action */}
-                <div className="mt-1 text-[10px] md:text-xs text-gray-500 text-center truncate">
+                <div className="hidden 2xl:block mt-1 text-[10px] md:text-xs text-gray-500 text-center truncate">
                   Last: {lastBleAction || '—'}
                 </div>
               </div>
