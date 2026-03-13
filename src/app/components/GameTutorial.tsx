@@ -1536,15 +1536,11 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                   )}
                 </div>
 
-                {/* Last BLE Action */}
-                <div className="hidden 2xl:block mt-1 text-[10px] md:text-xs text-gray-500 text-center truncate">
-                  Last: {lastBleAction || '—'}
-                </div>
               </div>
 
               {/* Levels List - Scrollable but compact */}
               <div className="bg-black/40 rounded-xl border border-gray-700 p-2 md:p-3 lg:p-4 flex-1 overflow-hidden flex flex-col min-h-0">
-                <h3 className="text-sm md:text-base lg:text-lg font-bold text-white mb-1 md:mb-2">Levels</h3>
+                <h3 className="hidden 2xl:block text-sm md:text-base lg:text-lg font-bold text-white mb-1 md:mb-2">Levels</h3>
                 <div className="space-x-1 2xl:block flex 2xl:space-y-1 pr-1 ">
                   {levels.map((levelItem, index) => (
                     <button
