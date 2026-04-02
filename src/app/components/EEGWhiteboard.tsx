@@ -101,6 +101,7 @@ const EEGWhiteboard = () => {
   const [menuActive, setMenuActive] = useState(false);
   const [menuLevel, setMenuLevel] = useState(0);
   const gridRef = useRef<boolean[][]>([]);
+  const [isConfigMode, setIsConfigMode] = useState(false);
 
   // Store last selection for each menu level
   const [menuSelections, setMenuSelections] = useState<Record<number, number>>({
@@ -136,7 +137,7 @@ const EEGWhiteboard = () => {
     'In menu: M(8/9) to navigate, stay on option for 2s to select',
   ]);
   const [cellSize, setCellSize] = useState(24);
-  
+
   // Shape drawing state
   const [selectedShape, setSelectedShape] = useState<ShapeType>(null);
   const [shapeInitialPoint, setShapeInitialPoint] = useState<{ x: number; y: number } | null>(null);
@@ -175,6 +176,29 @@ const EEGWhiteboard = () => {
 
   // Flag to track if initial state has been saved
   const initialSaveDoneRef = useRef(false);
+
+  const sendEnterConfigMode = useCallback(async () => {
+    if (!connected || !characteristic) {
+      logCommand('❌ Cannot enter config mode: Not connected to device');
+      return;
+    }
+
+    try {
+      // Send ENTER_CONFIG command via config characteristic
+      // First, get the config characteristic
+      const service = await bluetoothDevice?.gatt?.getPrimaryService('6910123a-eb0d-4c35-9a60-bebe1dcb549d');
+      if (service) {
+        const configChar = await service.getCharacteristic('6f4f1107-7fc1-43b2-a540-0aa1a9f1ce79');
+        const encoder = new TextEncoder();
+        await configChar.writeValue(encoder.encode('ENTER_CONFIG'));
+        logCommand('⚙️ Sent ENTER_CONFIG command to device');
+        setIsConfigMode(true);
+      }
+    } catch (error) {
+      console.error('Failed to send config command:', error);
+      logCommand(`❌ Failed to enter config mode: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [connected, bluetoothDevice]);
 
   useEffect(() => {
     if (gridContainerRef.current && gridDimensions.columns > 0 && gridDimensions.rows > 0) {
@@ -257,7 +281,7 @@ const EEGWhiteboard = () => {
     if (historyIndexRef.current < historyRef.current.length - 1) {
       historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
     }
-    
+
     // Add new state
     historyRef.current.push(state);
     historyIndexRef.current++;
@@ -286,11 +310,11 @@ const EEGWhiteboard = () => {
         menuSelection,
         timestamp: Date.now(),
       };
-      
+
       historyRef.current = [initialState];
       historyIndexRef.current = 0;
       initialSaveDoneRef.current = true;
-      
+
       console.log('Initial state saved');
     }
   }, [grid, cursorX, cursorY, currentMode, penState, menuActive, menuLevel, menuSelection]);
@@ -1217,17 +1241,17 @@ const EEGWhiteboard = () => {
         if (historyIndexRef.current > 0) {
           historyIndexRef.current--;
           const state = historyRef.current[historyIndexRef.current];
-          
+
           setGrid(state.board || []);
           setCursorX(state.cursorX);
           setCursorY(state.cursorY);
           setCurrentMode(state.currentMode);
           setPenState(state.penState);
           setMenuActive(false);
-          
+
           // Force re-render
           setUpdateCounter(prev => prev + 1);
-          
+
           console.log('Undo - New index:', historyIndexRef.current);
           logCommand('↶ Undo completed');
         } else {
@@ -1240,17 +1264,17 @@ const EEGWhiteboard = () => {
         if (historyIndexRef.current < historyRef.current.length - 1) {
           historyIndexRef.current++;
           const state = historyRef.current[historyIndexRef.current];
-          
+
           setGrid(state.board || []);
           setCursorX(state.cursorX);
           setCursorY(state.cursorY);
           setCurrentMode(state.currentMode);
           setPenState(state.penState);
           setMenuActive(false);
-          
+
           // Force re-render
           setUpdateCounter(prev => prev + 1);
-          
+
           console.log('Redo - New index:', historyIndexRef.current);
           logCommand('↷ Redo completed');
         } else {
@@ -1464,16 +1488,16 @@ const EEGWhiteboard = () => {
     if (historyIndexRef.current > 0) {
       historyIndexRef.current--;
       const state = historyRef.current[historyIndexRef.current];
-      
+
       setGrid(state.board || []);
       setCursorX(state.cursorX);
       setCursorY(state.cursorY);
       setCurrentMode(state.currentMode);
       setPenState(state.penState);
-      
+
       // Force re-render
       setUpdateCounter(prev => prev + 1);
-      
+
       logCommand('↶ Undo');
     }
   }, [logCommand]);
@@ -1483,16 +1507,16 @@ const EEGWhiteboard = () => {
     if (historyIndexRef.current < historyRef.current.length - 1) {
       historyIndexRef.current++;
       const state = historyRef.current[historyIndexRef.current];
-      
+
       setGrid(state.board || []);
       setCursorX(state.cursorX);
       setCursorY(state.cursorY);
       setCurrentMode(state.currentMode);
       setPenState(state.penState);
-      
+
       // Force re-render
       setUpdateCounter(prev => prev + 1);
-      
+
       logCommand('↷ Redo');
     }
   }, [logCommand]);
@@ -1508,6 +1532,8 @@ const EEGWhiteboard = () => {
         onSkip={() => setShowGameTutorial(false)}
         bleConnected={connected}
         bleEmitter={bleEmitter}
+        onEnterConfigMode={sendEnterConfigMode}
+        isConfigMode={isConfigMode}
       />
     );
   }
@@ -1562,6 +1588,8 @@ const EEGWhiteboard = () => {
             default: return 'Unknown';
           }
         }}
+        onEnterConfigMode={sendEnterConfigMode}
+        isConfigMode={isConfigMode}
       />
 
       {jawTimerActive && (

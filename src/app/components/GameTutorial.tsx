@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react
 import { PenState, DrawingMode, MenuLevel, MenuItem, BoardState } from '../types';
 import { MoveHorizontal, MoveVertical, MoveDiagonal, MoveDiagonal2, PencilOff, Pencil, Eraser } from 'lucide-react';
 import MenuPopup from './MenuPopup';
+import { useRouter } from "next/navigation"; // Import useRouter
 
 interface GameLevel {
   id: number;
@@ -23,6 +24,9 @@ interface GameTutorialProps {
   onSkip: () => void;
   bleConnected?: boolean;
   bleEmitter?: any;
+  onEnterConfigMode?: () => void; // New prop for entering config mode
+  isConfigMode?: boolean; // New prop to track config mode state
+
 }
 
 // Menu structure - updated to be a function that accepts shapeDrawingMode and isComplete
@@ -81,7 +85,9 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
   onConnect,
   onSkip,
   bleConnected = false,
-  bleEmitter
+  bleEmitter,
+  onEnterConfigMode,
+  isConfigMode = false,
 }) => {
   const [currentLevel, setCurrentLevel] = useState(0);
   const [playerGrid, setPlayerGrid] = useState<boolean[][]>([]);
@@ -102,7 +108,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
   const historyIndexRef = useRef<number>(-1);
   const maxHistorySize = 50;
   const initialSaveDoneRef = useRef(false);
-
+  const router = useRouter();
   // Force re-render counter for undo/redo
   const [, setUpdateCounter] = useState(0);
 
@@ -1436,7 +1442,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                 {!connected ? (
                   <button
                     onClick={onConnect}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg border border-gray-600 transition-all text-sm"
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 cursor-pointer text-white rounded-lg border border-gray-600 transition-all text-sm"
                   >
                     <span className='mr-2'>🔗</span>
                     <span className="font-semibold">Connect NPG Lite</span>
@@ -1444,7 +1450,7 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                 ) : (
                   <button
                     onClick={onDisconnect}
-                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg border border-gray-600 transition-all text-sm"
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 cursor-pointer text-white rounded-lg border border-gray-600 transition-all text-sm"
                   >
                     <span>🔌</span>
                     <span className="font-semibold">Disconnect</span>
@@ -1452,8 +1458,20 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                 )}
               </div>
               <button
+                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 cursor-pointer text-white rounded-lg border border-gray-600 transition-all text-sm"
+                onClick={() => {
+                  // Add null check here
+                  if (onEnterConfigMode) {
+                    onEnterConfigMode();
+                  }
+                  router.push("/config");
+                }}
+              >
+                Config
+              </button>
+              <button
                 onClick={onSkip}
-                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white rounded-lg border border-gray-600 transition-all text-sm"
+                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 cursor-pointer text-white rounded-lg border border-gray-600 transition-all text-sm"
               >
                 Skip to Drawing
               </button>
@@ -1548,10 +1566,10 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
                       onClick={() => !isComplete && setCurrentLevel(index)}
                       disabled={isComplete}
                       className={`w-full flex items-center p-1.5 md:p-2 rounded-lg transition-all text-left ${currentLevel === index
-                          ? 'bg-cyan-800/50 border border-cyan-600'
-                          : index < currentLevel
-                            ? 'bg-green-800/30 border border-green-700'
-                            : 'bg-gray-800/30 border border-gray-700 hover:bg-gray-700/30'
+                        ? 'bg-cyan-800/50 border border-cyan-600'
+                        : index < currentLevel
+                          ? 'bg-green-800/30 border border-green-700'
+                          : 'bg-gray-800/30 border border-gray-700 hover:bg-gray-700/30'
                         }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
