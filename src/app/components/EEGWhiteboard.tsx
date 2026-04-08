@@ -136,7 +136,6 @@ const EEGWhiteboard = () => {
     'Menu auto-closes after 2 seconds of inactivity',
     'In menu: M(8/9) to navigate, stay on option for 2s to select',
   ]);
-  const [cellSize, setCellSize] = useState(24);
 
   // Shape drawing state
   const [selectedShape, setSelectedShape] = useState<ShapeType>(null);
@@ -195,7 +194,7 @@ const EEGWhiteboard = () => {
         setIsConfigMode(true);
       }
     } catch (error) {
-      console.error('Failed to send config command:', error);
+      console.warn('Failed to send config command:', error);
       logCommand(`❌ Failed to enter config mode: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }, [connected, bluetoothDevice]);
@@ -901,7 +900,7 @@ const EEGWhiteboard = () => {
           setConnected(true);
           logCommand('✅ Connected and receiving notifications!');
         } catch (notifyError) {
-          console.error('Failed to start notifications:', notifyError);
+          console.warn('Failed to start notifications:', notifyError);
           setCharacteristic(characteristic);
           setConnected(true);
           startPolling(characteristic);
@@ -914,7 +913,7 @@ const EEGWhiteboard = () => {
       }
 
     } catch (error) {
-      console.error('Bluetooth connection failed:', error);
+      console.warn('Bluetooth connection failed:', error);
       setConnected(false);
 
       if (error instanceof Error) {
@@ -941,7 +940,7 @@ const EEGWhiteboard = () => {
           handleBLEData(fakeEvent);
         }
       } catch (error) {
-        console.error('Polling read failed:', error);
+        console.warn('Polling read failed:', error);
       }
     }, 200);
   };
@@ -1117,7 +1116,7 @@ const EEGWhiteboard = () => {
           logCommand('💾 Drawing saved with screenshot');
 
         } catch (domToImageError) {
-          console.error('dom-to-image failed:', domToImageError);
+          console.warn('dom-to-image failed:', domToImageError);
           logCommand(`⚠️ Screenshot failed: ${domToImageError instanceof Error ? domToImageError.message : 'Unknown error'}`);
 
           try {
@@ -1153,7 +1152,7 @@ const EEGWhiteboard = () => {
             logCommand('💾 Drawing saved with screenshot (fallback method)');
 
           } catch (fallbackError) {
-            console.error('Fallback screenshot also failed:', fallbackError);
+            console.warn('Fallback screenshot also failed:', fallbackError);
             document.body.appendChild(jsonLink);
             jsonLink.click();
             document.body.removeChild(jsonLink);
@@ -1173,7 +1172,7 @@ const EEGWhiteboard = () => {
         logCommand('💾 Drawing saved (screenshot not available)');
       }
     } catch (error) {
-      console.error('Save failed:', error);
+      console.warn('Save failed:', error);
       logCommand(`❌ Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
 
       try {
@@ -1195,7 +1194,7 @@ const EEGWhiteboard = () => {
         setMenuActive(false);
         logCommand('💾 Drawing saved (JSON only - emergency fallback)');
       } catch (jsonError) {
-        console.error('Even JSON save failed:', jsonError);
+        console.warn('Even JSON save failed:', jsonError);
         logCommand('❌ Complete save failure');
       }
     }

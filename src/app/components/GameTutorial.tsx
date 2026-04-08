@@ -189,6 +189,27 @@ const GameTutorial: React.FC<GameTutorialProps> = ({
       setCursorPixelPosition({ x: pixelX, y: pixelY });
     }
   }, [cursorX, cursorY, gridDimensions]);
+  // Add this useEffect at the beginning of GameTutorial component
+  useEffect(() => {
+    console.log('GameTutorial: Component mounted/remounted');
+
+    // Reset all game states when component mounts
+    const resetGameState = () => {
+      setPenState(0);
+      setShapeDrawingMode(false);
+      setSelectedShape(null);
+      setShapeInitialPoint(null);
+      setPreviewShape(null);
+      setMenuActive(false);
+      setLastBleAction('Game tutorial ready');
+    };
+
+    resetGameState();
+
+    return () => {
+      console.log('GameTutorial: Component unmounting');
+    };
+  }, []); // Empty dependency array means this runs on mount and unmount
 
   // Game levels - target patterns only, dimensions will be calculated dynamically
   const levels: GameLevel[] = [

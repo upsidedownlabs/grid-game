@@ -1,8 +1,11 @@
 "use client";
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from "next/link";
 
 const NeuroArtConfigurator: React.FC = () => {
+  // Add state for validation
+  const [actionConflict, setActionConflict] = useState<string | null>(null);
+  
   // Refs to access BLE state across the component
   const configCharacteristicRef = useRef<any>(null);
   const isConnectedRef = useRef(false);
@@ -30,14 +33,56 @@ const NeuroArtConfigurator: React.FC = () => {
     const jawOnSlider = document.getElementById('jawOnSlider') as HTMLInputElement;
     const emgLeftSlider = document.getElementById('emgLeftSlider') as HTMLInputElement;
     const emgRightSlider = document.getElementById('emgRightSlider') as HTMLInputElement;
+    
+    // Action dropdown elements
+    const blinkActionSelect = document.getElementById('blinkAction') as HTMLSelectElement;
+    const leftEMGActionSelect = document.getElementById('leftEMGAction') as HTMLSelectElement;
+    const rightEMGActionSelect = document.getElementById('rightEMGAction') as HTMLSelectElement;
+    const jawReleaseActionSelect = document.getElementById('jawReleaseAction') as HTMLSelectElement;
+    const jawHoldActionSelect = document.getElementById('jawHoldAction') as HTMLSelectElement;
 
     // Current thresholds cache
     let currentThresholds = {
       blink: 50,
       jawOn: 40,
       emgLeft: 150,
-      emgRight: 150
+      emgRight: 150,
+      blinkAction: 3,
+      leftEMGAction: 9,
+      rightEMGAction: 8,
+      jawReleaseAction: 2,
+      jawHoldAction: 0
     };
+
+    // Helper: Check for duplicate actions
+    function checkForDuplicateActions(): string | null {
+      const blinkAction = parseInt(blinkActionSelect.value);
+      const leftEMGAction = parseInt(leftEMGActionSelect.value);
+      const rightEMGAction = parseInt(rightEMGActionSelect.value);
+      const jawReleaseAction = parseInt(jawReleaseActionSelect.value);
+      const jawHoldAction = parseInt(jawHoldActionSelect.value);
+      
+      const actions = [
+        { name: 'Triple Blink', value: blinkAction },
+        { name: 'Left EMG', value: leftEMGAction },
+        { name: 'Right EMG', value: rightEMGAction },
+        { name: 'Jaw Release', value: jawReleaseAction },
+        { name: 'Jaw Hold', value: jawHoldAction }
+      ];
+      
+      // Skip NO ACTION (value 0) in duplicate check
+      const activeActions = actions.filter(a => a.value !== 0);
+      
+      // Find duplicates among active actions only
+      for (let i = 0; i < activeActions.length; i++) {
+        for (let j = i + 1; j < activeActions.length; j++) {
+          if (activeActions[i].value === activeActions[j].value) {
+            return `${activeActions[i].name} and ${activeActions[j].name} have the same action!`;
+          }
+        }
+      }
+      return null;
+    }
 
     // Helper: Update threshold thumb position
     function updateThresholdFromSlider(slider: HTMLInputElement, thumbId: string, badgeId: string, displayId: string, suffix = '') {
@@ -120,17 +165,31 @@ const NeuroArtConfigurator: React.FC = () => {
         console.log(`Sent: ${command}`);
         return true;
       } catch (error) {
-        console.error('Send error:', error);
+        console.warn('Send error:', error);
         return false;
       }
     }
 
-    // Save all thresholds to device
+    // Save all thresholds to device with validation
     async function saveAllThresholds() {
+      // Check for duplicate actions first
+      const conflict = checkForDuplicateActions();
+      if (conflict) {
+        setActionConflict(conflict);
+        setTimeout(() => setActionConflict(null), 3000);
+        console.warn('Cannot save:', conflict);
+        return;
+      }
+      
       const blink = parseInt(blinkSlider.value);
       const jawOn = parseInt(jawOnSlider.value);
       const emgLeft = parseInt(emgLeftSlider.value);
       const emgRight = parseInt(emgRightSlider.value);
+      const blinkAction = parseInt(blinkActionSelect.value);
+      const leftEMGAction = parseInt(leftEMGActionSelect.value);
+      const rightEMGAction = parseInt(rightEMGActionSelect.value);
+      const jawReleaseAction = parseInt(jawReleaseActionSelect.value);
+      const jawHoldAction = parseInt(jawHoldActionSelect.value);
 
       await sendThreshold('BLINK', blink);
       await new Promise(r => setTimeout(r, 100));
@@ -139,8 +198,22 @@ const NeuroArtConfigurator: React.FC = () => {
       await sendThreshold('EMG_LEFT', emgLeft);
       await new Promise(r => setTimeout(r, 100));
       await sendThreshold('EMG_RIGHT', emgRight);
+      await new Promise(r => setTimeout(r, 100));
+      await sendThreshold('BLINK_ACTION', blinkAction);
+      await new Promise(r => setTimeout(r, 100));
+      await sendThreshold('LEFT_EMG_ACTION', leftEMGAction);
+      await new Promise(r => setTimeout(r, 100));
+      await sendThreshold('RIGHT_EMG_ACTION', rightEMGAction);
+      await new Promise(r => setTimeout(r, 100));
+      await sendThreshold('JAW_RELEASE_ACTION', jawReleaseAction);
+      await new Promise(r => setTimeout(r, 100));
+      await sendThreshold('JAW_HOLD_ACTION', jawHoldAction);
 
-      currentThresholds = { blink, jawOn, emgLeft, emgRight };
+      currentThresholds = { 
+        blink, jawOn, emgLeft, emgRight, 
+        blinkAction, leftEMGAction, rightEMGAction, 
+        jawReleaseAction, jawHoldAction 
+      };
 
       const msg = document.getElementById('saveSuccess');
       if (msg) {
@@ -163,7 +236,7 @@ const NeuroArtConfigurator: React.FC = () => {
         await configCharacteristic.writeValue(encoder.encode('GET_THRESHOLDS'));
         console.log('Requested thresholds');
       } catch (error) {
-        console.error('Request error:', error);
+        console.warn('Request error:', error);
       }
     }
 
@@ -179,7 +252,7 @@ const NeuroArtConfigurator: React.FC = () => {
         console.log('Sent EXIT_CONFIG command');
         return true;
       } catch (error) {
-        console.error('Send EXIT_CONFIG error:', error);
+        console.warn('Send EXIT_CONFIG error:', error);
         return false;
       }
     }
@@ -221,30 +294,70 @@ const NeuroArtConfigurator: React.FC = () => {
       if (data.BLINK_THRESH !== undefined && data.BLINK_THRESH !== currentThresholds.blink) {
         currentThresholds.blink = data.BLINK_THRESH;
         isUpdatingFromServer = true;
-        blinkSlider.value = data.BLINK_THRESH;
+        blinkSlider.value = data.BLINK_THRESH.toString();
         updateThresholdFromSlider(blinkSlider, 'blinkThresholdThumb', 'blinkThresholdBadge', 'blinkThresholdDisplay', '');
         isUpdatingFromServer = false;
       }
       if (data.JAW_ON !== undefined && data.JAW_ON !== currentThresholds.jawOn) {
         currentThresholds.jawOn = data.JAW_ON;
         isUpdatingFromServer = true;
-        jawOnSlider.value = data.JAW_ON;
+        jawOnSlider.value = data.JAW_ON.toString();
         updateThresholdFromSlider(jawOnSlider, 'jawOnThresholdThumb', 'jawOnThresholdBadge', 'jawOnDisplay', '');
         isUpdatingFromServer = false;
       }
       if (data.EMG_LEFT !== undefined && data.EMG_LEFT !== currentThresholds.emgLeft) {
         currentThresholds.emgLeft = data.EMG_LEFT;
         isUpdatingFromServer = true;
-        emgLeftSlider.value = data.EMG_LEFT;
+        emgLeftSlider.value = data.EMG_LEFT.toString();
         updateThresholdFromSlider(emgLeftSlider, 'emg1ThresholdThumb', 'emg1ThresholdBadge', 'emgLeftDisplay', '');
         isUpdatingFromServer = false;
       }
       if (data.EMG_RIGHT !== undefined && data.EMG_RIGHT !== currentThresholds.emgRight) {
         currentThresholds.emgRight = data.EMG_RIGHT;
         isUpdatingFromServer = true;
-        emgRightSlider.value = data.EMG_RIGHT;
+        emgRightSlider.value = data.EMG_RIGHT.toString();
         updateThresholdFromSlider(emgRightSlider, 'emg2ThresholdThumb', 'emg2ThresholdBadge', 'emgRightDisplay', '');
         isUpdatingFromServer = false;
+      }
+      
+      // Action mappings from device
+      if (data.BLINK_ACTION !== undefined && data.BLINK_ACTION !== currentThresholds.blinkAction) {
+        currentThresholds.blinkAction = data.BLINK_ACTION;
+        isUpdatingFromServer = true;
+        blinkActionSelect.value = data.BLINK_ACTION.toString();
+        isUpdatingFromServer = false;
+      }
+      if (data.LEFT_EMG_ACTION !== undefined && data.LEFT_EMG_ACTION !== currentThresholds.leftEMGAction) {
+        currentThresholds.leftEMGAction = data.LEFT_EMG_ACTION;
+        isUpdatingFromServer = true;
+        leftEMGActionSelect.value = data.LEFT_EMG_ACTION.toString();
+        isUpdatingFromServer = false;
+      }
+      if (data.RIGHT_EMG_ACTION !== undefined && data.RIGHT_EMG_ACTION !== currentThresholds.rightEMGAction) {
+        currentThresholds.rightEMGAction = data.RIGHT_EMG_ACTION;
+        isUpdatingFromServer = true;
+        rightEMGActionSelect.value = data.RIGHT_EMG_ACTION.toString();
+        isUpdatingFromServer = false;
+      }
+      if (data.JAW_RELEASE_ACTION !== undefined && data.JAW_RELEASE_ACTION !== currentThresholds.jawReleaseAction) {
+        currentThresholds.jawReleaseAction = data.JAW_RELEASE_ACTION;
+        isUpdatingFromServer = true;
+        jawReleaseActionSelect.value = data.JAW_RELEASE_ACTION.toString();
+        isUpdatingFromServer = false;
+      }
+      if (data.JAW_HOLD_ACTION !== undefined && data.JAW_HOLD_ACTION !== currentThresholds.jawHoldAction) {
+        currentThresholds.jawHoldAction = data.JAW_HOLD_ACTION;
+        isUpdatingFromServer = true;
+        jawHoldActionSelect.value = data.JAW_HOLD_ACTION.toString();
+        isUpdatingFromServer = false;
+      }
+
+      if (data.BLINK_THRESH !== undefined && !isConfigMode) {
+        isConfigMode = true;
+        const badge = document.getElementById('configBadge');
+        const led = document.getElementById('statusLed');
+        if (badge) (badge as HTMLElement).style.display = 'inline-block';
+        if (led) led.classList.add('config-mode');
       }
     }
 
@@ -256,16 +369,58 @@ const NeuroArtConfigurator: React.FC = () => {
         const data = parseData(value);
         if (data) {
           updateUIFromData(data);
-          if (data.BLINK_THRESH !== undefined && !isConfigMode) {
-            isConfigMode = true;
-            const badge = document.getElementById('configBadge');
-            const led = document.getElementById('statusLed');
-            if (badge) (badge as HTMLElement).style.display = 'inline-block';
-            if (led) led.classList.add('config-mode');
-          }
         }
       } catch (e) {
-        console.error('Notification error:', e);
+        console.warn('Notification error:', e);
+      }
+    }
+
+    // Update available options in dropdowns based on selections
+    function updateDropdownOptions(changedSelect: HTMLSelectElement, changedValue: string) {
+      const selects = [blinkActionSelect, leftEMGActionSelect, rightEMGActionSelect, jawReleaseActionSelect, jawHoldActionSelect];
+      const currentValues = selects.map(s => s?.value);
+      
+      selects.forEach(select => {
+        if (select && select !== changedSelect) {
+          const options = select.options;
+          for (let i = 0; i < options.length; i++) {
+            const option = options[i];
+            // Don't disable NO ACTION (value 0) for other selects
+            if (option.value !== "0" && currentValues.includes(option.value) && option.value !== changedValue) {
+              option.disabled = true;
+              option.style.opacity = '0.5';
+            } else {
+              option.disabled = false;
+              option.style.opacity = '1';
+            }
+          }
+        }
+      });
+    }
+
+    // Setup action dropdown listeners with validation
+    function setupActionListeners() {
+      const updateAndCheck = (select: HTMLSelectElement) => {
+        if (!isUpdatingFromServer && isConnected) {
+          updateDropdownOptions(select, select.value);
+          autoSave();
+        }
+      };
+      
+      if (blinkActionSelect) {
+        blinkActionSelect.addEventListener('change', () => updateAndCheck(blinkActionSelect));
+      }
+      if (leftEMGActionSelect) {
+        leftEMGActionSelect.addEventListener('change', () => updateAndCheck(leftEMGActionSelect));
+      }
+      if (rightEMGActionSelect) {
+        rightEMGActionSelect.addEventListener('change', () => updateAndCheck(rightEMGActionSelect));
+      }
+      if (jawReleaseActionSelect) {
+        jawReleaseActionSelect.addEventListener('change', () => updateAndCheck(jawReleaseActionSelect));
+      }
+      if (jawHoldActionSelect) {
+        jawHoldActionSelect.addEventListener('change', () => updateAndCheck(jawHoldActionSelect));
       }
     }
 
@@ -293,6 +448,8 @@ const NeuroArtConfigurator: React.FC = () => {
         dataCharacteristic.addEventListener('characteristicvaluechanged', handleDataNotification);
 
         isConnected = true;
+        configCharacteristicRef.current = configCharacteristic;
+        isConnectedRef.current = true;
 
         const connectBtn = document.getElementById('connectBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
@@ -313,14 +470,16 @@ const NeuroArtConfigurator: React.FC = () => {
         console.log('Connected to device');
       } catch (error: any) {
         setLoading(false);
-        console.error('Connection error:', error);
-        alert('Connection failed: ' + error.message);
+        console.warn('Connection error:', error);
       }
     }
 
     function onDisconnected() {
       isConnected = false;
       isConfigMode = false;
+      configCharacteristicRef.current = null;
+      isConnectedRef.current = false;
+      
       const connectBtn = document.getElementById('connectBtn');
       const disconnectBtn = document.getElementById('disconnectBtn');
       const led = document.getElementById('statusLed');
@@ -395,6 +554,9 @@ const NeuroArtConfigurator: React.FC = () => {
     if (jawOnSlider) setupSliderDrag(jawOnSlider, 'jawOnThresholdThumb', 'jawOnThresholdBadge', 'jawOnDisplay', '');
     if (emgLeftSlider) setupSliderDrag(emgLeftSlider, 'emg1ThresholdThumb', 'emg1ThresholdBadge', 'emgLeftDisplay', '');
     if (emgRightSlider) setupSliderDrag(emgRightSlider, 'emg2ThresholdThumb', 'emg2ThresholdBadge', 'emgRightDisplay', '');
+    
+    // Setup action listeners
+    setupActionListeners();
 
     // Initial UI updates
     if (blinkSlider) updateThresholdFromSlider(blinkSlider, 'blinkThresholdThumb', 'blinkThresholdBadge', 'blinkThresholdDisplay', '');
@@ -432,6 +594,13 @@ const NeuroArtConfigurator: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0c12] font-sans flex flex-col">
+      {/* Conflict Warning */}
+      {actionConflict && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[1300] bg-red-900 text-red-100 px-5 py-2 rounded-full text-sm font-medium shadow-lg border border-red-700">
+          ⚠️ {actionConflict}
+        </div>
+      )}
+      
       {/* Main Content - This will push footer down */}
       <div className="flex-1 flex flex-col px-4 py-3">
         <h1 className="text-center text-2xl font-semibold text-[#eef2ff] pb-1.5 tracking-tight shadow-sm">
@@ -461,7 +630,7 @@ const NeuroArtConfigurator: React.FC = () => {
         </div>
 
         <div id="saveSuccess" className="hidden fixed top-4 right-5 z-[1200] bg-green-900 text-green-100 px-5 py-2 rounded-full text-sm font-medium shadow-lg border border-green-700">
-          ✓ Threshold saved
+          ✓ Settings saved
         </div>
 
         <div className="flex flex-col lg:flex-row gap-4 my-2 mb-1.5">
@@ -475,13 +644,24 @@ const NeuroArtConfigurator: React.FC = () => {
                   Threshold: <span id="blinkThresholdDisplay">50</span>
                 </span>
               </div>
-              <div className="relative h-20 cursor-pointer mt-2.5 mb-[90px]" id="blinkContainer">
+              <div className="relative h-20 cursor-pointer mt-2.5 mb-[30px]" id="blinkContainer">
                 <div className="absolute top-1/2 left-0 right-0 h-20 bg-[#232838] -translate-y-1/2 rounded-md shadow-inner" />
                 <div id="blinkLiveFill" className="absolute top-1/2 left-0 h-20 -translate-y-1/2 transition-[width] duration-75 rounded-l-md" style={{ background: '#10b981', width: '0%' }} />
                 <div id="blinkLiveLabel" className="absolute top-1/2 left-[5%] -translate-x-1/2 -translate-y-1/2 text-white text-xl font-medium whitespace-nowrap pointer-events-none drop-shadow-md">0</div>
                 <div id="blinkThresholdThumb" className="absolute top-1/2 w-5 h-[95px] -translate-x-1/2 -translate-y-1/2 cursor-grab z-30 shadow-lg border-2 border-orange-100 rounded" style={{ background: '#ff8a5c', left: '0%' }} />
                 <div id="blinkThresholdBadge" className="absolute top-[95px] -translate-x-1/2 bg-[#ff8a5c] text-black px-2 py-0.5 rounded-lg text-2xl font-bold whitespace-nowrap pointer-events-none z-25 shadow-md border border-[#ffbb95]">0</div>
                 <input type="range" id="blinkSlider" className="absolute w-full h-10 opacity-0 cursor-pointer z-35 top-1/2 -translate-y-1/2" min="0" max="200" step="1" defaultValue="50" />
+              </div>
+              {/* Action Dropdown */}
+              <div >
+                <label className="text-sm font-medium text-gray-400 block mb-2">Action on Triple Blink:</label>
+                <select id="blinkAction" className="w-full bg-[#1e2432] text-white rounded-lg px-3 py-2 border border-[#2d3343] focus:outline-none focus:border-[#ff8a5c]" defaultValue="3">
+                  <option value="3">SHAPE SELECTION</option>
+                  <option value="8">RIGHT AND UP</option>
+                  <option value="9">LEFT AND DOWN</option>
+                  <option value="2">MENU OPEN AND SWITCH</option>
+                  <option value="0">NO ACTION</option>
+                </select>
               </div>
             </div>
 
@@ -493,13 +673,35 @@ const NeuroArtConfigurator: React.FC = () => {
                   Threshold: <span id="jawOnDisplay">40</span>
                 </span>
               </div>
-              <div className="relative h-20 cursor-pointer mt-2.5 mb-[90px]" id="jawOnContainer">
+              <div className="relative h-20 cursor-pointer mt-2.5 mb-[30px]" id="jawOnContainer">
                 <div className="absolute top-1/2 left-0 right-0 h-20 bg-[#232838] -translate-y-1/2 rounded-md shadow-inner" />
                 <div id="jawOnLiveFill" className="absolute top-1/2 left-0 h-20 -translate-y-1/2 transition-[width] duration-75 rounded-l-md" style={{ background: '#f59e0b', width: '0%' }} />
                 <div id="jawOnLiveLabel" className="absolute top-1/2 left-[5%] -translate-x-1/2 -translate-y-1/2 text-white text-xl font-medium whitespace-nowrap pointer-events-none drop-shadow-md">0</div>
                 <div id="jawOnThresholdThumb" className="absolute top-1/2 w-5 h-[95px] -translate-x-1/2 -translate-y-1/2 cursor-grab z-30 shadow-lg border-2 border-orange-100 rounded" style={{ background: '#ff8a5c', left: '0%' }} />
                 <div id="jawOnThresholdBadge" className="absolute top-[95px] -translate-x-1/2 bg-[#ff8a5c] text-black px-2 py-0.5 rounded-lg text-2xl font-bold whitespace-nowrap pointer-events-none z-25 shadow-md border border-[#ffbb95]">0</div>
                 <input type="range" id="jawOnSlider" className="absolute w-full h-10 opacity-0 cursor-pointer z-35 top-1/2 -translate-y-1/2" min="0" max="100" step="1" defaultValue="40" />
+              </div>
+              {/* Action Dropdown for Jaw Clench */}
+              <div className="mb-3">
+                <label className="text-sm font-medium text-gray-400 block mb-2">Action on Jaw Clench:</label>
+                <select id="jawReleaseAction" className="w-full bg-[#1e2432] text-white rounded-lg px-3 py-2 border border-[#2d3343] focus:outline-none focus:border-[#ff8a5c]" defaultValue="2">
+                  <option value="2">MENU OPEN AND SWITCH</option>
+                  <option value="3">SHAPE SELECTION</option>
+                  <option value="8">RIGHT AND UP</option>
+                  <option value="9">LEFT AND DOWN</option>
+                  <option value="0">NO ACTION</option>
+                </select>
+              </div>
+              {/* Action Dropdown for Jaw Hold */}
+              <div>
+                <label className="text-sm font-medium text-gray-400 block mb-2">Action on Jaw Hold (3+ sec):</label>
+                <select id="jawHoldAction" className="w-full bg-[#1e2432] text-white rounded-lg px-3 py-2 border border-[#2d3343] focus:outline-none focus:border-[#ff8a5c]" defaultValue="0">
+                  <option value="2">MENU OPEN AND SWITCH</option>
+                  <option value="3">SHAPE SELECTION</option>
+                  <option value="8">RIGHT AND UP</option>
+                  <option value="9">LEFT AND DOWN</option>
+                  <option value="0">NO ACTION</option>
+                </select>
               </div>
             </div>
           </div>
@@ -514,13 +716,24 @@ const NeuroArtConfigurator: React.FC = () => {
                   Threshold: <span id="emgRightDisplay">150</span>
                 </span>
               </div>
-              <div className="relative h-20 cursor-pointer mt-2.5 mb-[90px]" id="emg2Container">
+              <div className="relative h-20 cursor-pointer mt-2.5 mb-[30px]" id="emg2Container">
                 <div className="absolute top-1/2 left-0 right-0 h-20 bg-[#232838] -translate-y-1/2 rounded-md shadow-inner" />
                 <div id="emg2LiveFill" className="absolute top-1/2 left-0 h-20 -translate-y-1/2 transition-[width] duration-75 rounded-l-md" style={{ background: '#f97316', width: '0%' }} />
                 <div id="emg2LiveLabel" className="absolute top-1/2 left-[5%] -translate-x-1/2 -translate-y-1/2 text-white text-xl font-medium whitespace-nowrap pointer-events-none drop-shadow-md">0</div>
                 <div id="emg2ThresholdThumb" className="absolute top-1/2 w-5 h-[95px] -translate-x-1/2 -translate-y-1/2 cursor-grab z-30 shadow-lg border-2 border-orange-100 rounded" style={{ background: '#ff8a5c', left: '0%' }} />
                 <div id="emg2ThresholdBadge" className="absolute top-[95px] -translate-x-1/2 bg-[#ff8a5c] text-black px-2 py-0.5 rounded-lg text-2xl font-bold whitespace-nowrap pointer-events-none z-25 shadow-md border border-[#ffbb95]">0</div>
                 <input type="range" id="emgRightSlider" className="absolute w-full h-10 opacity-0 cursor-pointer z-35 top-1/2 -translate-y-1/2" min="0" max="300" step="5" defaultValue="150" />
+              </div>
+              {/* Action Dropdown */}
+              <div >
+                <label className="text-sm font-medium text-gray-400 block mb-2">Action on Right EMG:</label>
+                <select id="rightEMGAction" className="w-full bg-[#1e2432] text-white rounded-lg px-3 py-2 border border-[#2d3343] focus:outline-none focus:border-[#ff8a5c]" defaultValue="8">
+                  <option value="8">RIGHT AND UP</option>
+                  <option value="9">LEFT AND DOWN</option>
+                  <option value="3">SHAPE SELECTION</option>
+                  <option value="2">MENU OPEN AND SWITCH</option>
+                  <option value="0">NO ACTION</option>
+                </select>
               </div>
             </div>
 
@@ -532,13 +745,24 @@ const NeuroArtConfigurator: React.FC = () => {
                   Threshold: <span id="emgLeftDisplay">150</span>
                 </span>
               </div>
-              <div className="relative h-20 cursor-pointer mt-2.5 mb-[90px]" id="emg1Container">
+              <div className="relative h-20 cursor-pointer mt-2.5 mb-[30px]" id="emg1Container">
                 <div className="absolute top-1/2 left-0 right-0 h-20 bg-[#232838] -translate-y-1/2 rounded-md shadow-inner" />
                 <div id="emg1LiveFill" className="absolute top-1/2 left-0 h-20 -translate-y-1/2 transition-[width] duration-75 rounded-l-md" style={{ background: '#f97316', width: '0%' }} />
                 <div id="emg1LiveLabel" className="absolute top-1/2 left-[5%] -translate-x-1/2 -translate-y-1/2 text-white text-xl font-medium whitespace-nowrap pointer-events-none drop-shadow-md">0</div>
                 <div id="emg1ThresholdThumb" className="absolute top-1/2 w-5 h-[95px] -translate-x-1/2 -translate-y-1/2 cursor-grab z-30 shadow-lg border-2 border-orange-100 rounded" style={{ background: '#ff8a5c', left: '0%' }} />
                 <div id="emg1ThresholdBadge" className="absolute top-[95px] -translate-x-1/2 bg-[#ff8a5c] text-black px-2 py-0.5 rounded-lg text-2xl font-bold whitespace-nowrap pointer-events-none z-25 shadow-md border border-[#ffbb95]">0</div>
                 <input type="range" id="emgLeftSlider" className="absolute w-full h-10 opacity-0 cursor-pointer z-35 top-1/2 -translate-y-1/2" min="0" max="300" step="5" defaultValue="150" />
+              </div>
+              {/* Action Dropdown */}
+              <div >
+                <label className="text-sm font-medium text-gray-400 block mb-2">Action on Left EMG:</label>
+                <select id="leftEMGAction" className="w-full bg-[#1e2432] text-white rounded-lg px-3 py-2 border border-[#2d3343] focus:outline-none focus:border-[#ff8a5c]" defaultValue="9">
+                  <option value="9">LEFT AND DOWN</option>
+                  <option value="8">RIGHT AND UP</option>
+                  <option value="3">SHAPE SELECTION</option>
+                  <option value="2">MENU OPEN AND SWITCH</option>
+                  <option value="0">NO ACTION</option>
+                </select>
               </div>
             </div>
           </div>
