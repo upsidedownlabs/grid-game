@@ -1,0 +1,104 @@
+/* app/globals.css */
+@import "tailwindcss";
+
+/* Define your theme in the CSS file */
+@theme {
+  /* Animations */
+  --animate-logo-spin: logo-spin 10s linear infinite;
+  --animate-pulse: pulse 1.5s infinite;
+  --animate-x-pulse: x-pulse 1s infinite alternate;
+  --animate-o-pulse: o-pulse 1s infinite alternate;
+  --animate-timer-pulse: timer-pulse 1s infinite;
+  --animate-jaw-pulse: jaw-pulse 0.5s infinite alternate;
+  --animate-popup-appear: popup-appear 0.4s ease-out;
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-hint-pulse: hint-pulse 2s infinite;
+
+  /* Keyframes */
+  @keyframes logo-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1.2); }
+    50% { opacity: 0.8; transform: scale(1.1); }
+  }
+  @keyframes x-pulse {
+    from { transform: scale(1); opacity: 1; }
+    to { transform: scale(1.2); opacity: 0.8; }
+  }
+  @keyframes o-pulse {
+    from { transform: scale(1); opacity: 1; }
+    to { transform: scale(1.2); opacity: 0.8; }
+  }
+  @keyframes timer-pulse {
+    0%, 100% { 
+      border-color: #ff9800;
+      box-shadow: 0 0 20px rgba(255, 152, 0, 0.6);
+    }
+    50% { 
+      border-color: #ff5722;
+      box-shadow: 0 0 30px rgba(255, 87, 34, 0.8);
+    }
+  }
+  @keyframes jaw-pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.2); }
+  }
+  @keyframes popup-appear {
+    from { 
+      opacity: 0;
+      transform: translate(-50%, -60%) scale(0.9);
+    }
+    to { 
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes hint-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Colors */
+  --color-primary: #00b4d8;
+  --color-primary-dark: #0077b6;
+  --color-secondary: #ff6b6b;
+  --color-secondary-dark: #ee5a52;
+  --color-tertiary: #9c27b0;
+  --color-tertiary-dark: #8e24aa;
+  --color-quaternary: #ff9800;
+  --color-quaternary-dark: #f57c00;
+  --color-background: linear-gradient(135deg, #1a1a2e, #16213e);
+}
+
+/* Custom utility classes */
+.gradient-text {
+  background: linear-gradient(45deg, #00b4d8, #90e0ef);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 2px 10px rgba(0, 180, 216, 0.3);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(45deg, #00b4d8, #0077b6);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(45deg, #0077b6, #005b8c);
+}
